@@ -5,7 +5,7 @@ export const EN_US_MESSAGES = {
     "mobile.back_to_account": "Back to Me",
     "app.boot_label": "Preparing your notebook…",
     "app.document_title": "Inkstone",
-    "app.meta_description": "A private, self-hosted Markdown notebook built on Cloudflare.",
+    "app.meta_description": "A private, self-hosted Markdown notebook.",
     "api.error.bad_request": "The request is invalid",
     "api.error.conflict": "This content was changed elsewhere. Refresh and try again",
     "api.error.forbidden": "You do not have permission to perform this action",
@@ -648,7 +648,7 @@ export const EN_US_MESSAGES = {
     "settings.mcp_ai_search_clear_desc": "Removes every stored vector for this account and cancels pending indexing. Search falls back to keywords until you rebuild the index.",
     "settings.mcp_ai_search_clear_title": "Clear the AI search index?",
     "settings.mcp_ai_search_cleared": "Cleared {count} embeddings",
-    "settings.mcp_ai_search_desc": "Notes are embedded privately on your Cloudflare account and stored in your own database, one index per account. The search tools merge keyword and semantic results automatically. Content changes are indexed in the background.",
+    "settings.mcp_ai_search_desc": "Notes are embedded privately within this deployment and vectors are stored in its database, one index per account. The search tools merge keyword and semantic results automatically. Content changes are indexed in the background.",
     "settings.mcp_ai_search_disabled": "AI search disabled",
     "settings.mcp_ai_search_enabled": "AI search enabled, building the index…",
     "settings.mcp_ai_search_indexed": "{count} notes indexed",
@@ -658,7 +658,7 @@ export const EN_US_MESSAGES = {
     "settings.mcp_ai_search_reindex_title": "Rebuild the AI search index?",
     "settings.mcp_ai_search_reindexed": "Queued {count} notes for re-indexing",
     "settings.mcp_ai_search_unavailable": "Unavailable",
-    "settings.mcp_ai_search_unavailable_desc": "Workers AI is not configured for this deployment, so AI search stays off and keyword search is used. Add the AI binding in wrangler.toml to enable it.",
+    "settings.mcp_ai_search_unavailable_desc": "No AI embedding service is configured for this deployment, so AI search stays off and keyword search is used.",
     "settings.mcp_api_key_copy_warning": "Copy this key now — it will never be shown again",
     "settings.mcp_api_key_create": "Create key",
     "settings.mcp_api_key_created": "API key created",
@@ -1142,7 +1142,7 @@ Twelve levels of drag-sortable folders, inline \`#tags\`, \`[[wiki links]]\`, ba
 :::
 
 ::: tab-item Search & AI
-Keyboard command-palette navigation, keyword search, and optional Workers AI semantic/hybrid search. Every account has a separate index, with automatic keyword fallback when AI is unavailable.
+Keyboard command-palette navigation, keyword search, and optional semantic/hybrid search when an AI embedding service is configured. Every account has a separate index, with automatic keyword fallback when AI is unavailable.
 :::
 
 ::: tab-item Safety & backup
@@ -1157,7 +1157,7 @@ Under **Settings → MCP**, the owner can enable the remote MCP service and each
 - Full MCP clients such as Codex and Claude Code authorize through OAuth 2.1 with PKCE. You can revoke one client or every grant at any time.
 - Scripts and minimal clients without OAuth can use an \`ink_...\` API key. A key is shown once, stored only as a hash, and can be revoked at any time.
 - MCP can search, read bounded ranges, inspect outlines/folders/tags/links, and—with explicit permission—safely create, edit, organize, trash, or restore notes. Permanent purge is never exposed.
-- With Workers AI configured, Inkstone builds a per-account semantic index and combines semantic and keyword results. The index can be rebuilt or cleared, and content changes are indexed in the background.
+- With an AI embedding service configured, Inkstone builds a per-account semantic index and combines semantic and keyword results. The index can be rebuilt or cleared, and content changes are indexed in the background.
 
 > [!WARNING] Check an external AI client's privacy policy before connecting
 > Inkstone isolates accounts and enforces permissions, but content an authorized client actually reads is then processed by that client.

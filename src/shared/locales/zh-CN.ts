@@ -6,7 +6,7 @@ export const ZH_CN_MESSAGES = {
     "mobile.back_to_account": "返回我的",
     "app.boot_label": "正在准备笔记本…",
     "app.document_title": "Inkstone",
-    "app.meta_description": "运行在 Cloudflare 上的私有、自托管 Markdown 笔记本。",
+    "app.meta_description": "私有、自托管的 Markdown 笔记本。",
     "api.error.bad_request": "请求内容有误",
     "api.error.conflict": "内容已在别处修改，请刷新后重试",
     "api.error.forbidden": "没有权限执行此操作",
@@ -649,7 +649,7 @@ export const ZH_CN_MESSAGES = {
     "settings.mcp_ai_search_clear_desc": "删除本账号存储的全部向量并取消待处理任务。之后搜索会回退为关键词匹配，直到你重新建立索引。",
     "settings.mcp_ai_search_clear_title": "清空 AI 搜索索引？",
     "settings.mcp_ai_search_cleared": "已清空 {count} 条向量",
-    "settings.mcp_ai_search_desc": "笔记在你自己 Cloudflare 账号内私有嵌入，向量存放在你自己的数据库，每个账号独立索引。搜索工具会自动融合关键词与语义结果，内容变化会在后台建立索引。",
+    "settings.mcp_ai_search_desc": "笔记在当前部署内私有嵌入，向量存放在本实例的数据库中，每个账号独立索引。搜索工具会自动融合关键词与语义结果，内容变化会在后台建立索引。",
     "settings.mcp_ai_search_disabled": "已关闭 AI 搜索",
     "settings.mcp_ai_search_enabled": "已开启 AI 搜索，正在建立索引…",
     "settings.mcp_ai_search_indexed": "已索引 {count} 篇笔记",
@@ -659,7 +659,7 @@ export const ZH_CN_MESSAGES = {
     "settings.mcp_ai_search_reindex_title": "重建 AI 搜索索引？",
     "settings.mcp_ai_search_reindexed": "已将 {count} 篇笔记加入重建队列",
     "settings.mcp_ai_search_unavailable": "不可用",
-    "settings.mcp_ai_search_unavailable_desc": "这个部署还没有配置 Workers AI，因此 AI 搜索保持关闭，使用关键词搜索。在 wrangler.toml 中添加 AI 绑定即可启用。",
+    "settings.mcp_ai_search_unavailable_desc": "当前部署还没有配置 AI 嵌入服务，因此 AI 搜索保持关闭，使用关键词搜索。",
     "settings.mcp_api_key_copy_warning": "请立即复制此密钥——之后不会再显示",
     "settings.mcp_api_key_create": "创建密钥",
     "settings.mcp_api_key_created": "API 密钥已创建",
@@ -1143,7 +1143,7 @@ aliases:
 :::
 
 ::: tab-item 搜索与 AI
-命令面板、关键词搜索，以及可选的 Workers AI 语义/混合搜索。每个账号使用独立索引；AI 不可用时自动回退到关键词结果。
+命令面板、关键词搜索，以及配置 AI 嵌入服务后可用的语义/混合搜索。每个账号使用独立索引；AI 不可用时自动回退到关键词结果。
 :::
 
 ::: tab-item 安全与备份
@@ -1158,7 +1158,7 @@ aliases:
 - Codex、Claude Code 等完整 MCP 客户端通过带 PKCE 的 OAuth 2.1 授权；可以随时撤销单个或全部客户端。
 - 脚本或不支持 OAuth 的精简客户端可以使用 \`ink_...\` API Key。Key 只显示一次，服务端只保存哈希，也可以随时撤销。
 - MCP 可以搜索、分段读取、查看大纲/文件夹/标签/链接，并在明确授权后安全创建、编辑、整理、移入回收站或恢复笔记；永久删除始终不可用。
-- 配置 Workers AI 后可以建立按账号隔离的语义索引，并把语义结果与关键词结果合并。索引可重建或清空，正文变化会在后台更新。
+- 配置 AI 嵌入服务后可以建立按账号隔离的语义索引，并把语义结果与关键词结果合并。索引可重建或清空，正文变化会在后台更新。
 
 > [!WARNING] 连接外部 AI 前先确认隐私政策
 > Inkstone 会隔离账号并校验权限，但已授权客户端实际读取到的内容，之后仍由该客户端处理。
