@@ -23,6 +23,14 @@ export interface Env {
 
   PUBLIC_URL?: string
 
+  RUNTIME_NAME?: 'cloudflare' | 'vps'
+
+  ATTACHMENT_STORAGE_NAME?: 'kv' | 'local' | 'r2'
+
+  APP_VERSION?: string
+
+  SOURCE_REVISION?: string
+
   /** Workers AI binding for semantic search; optional so AI search degrades gracefully. */
   AI?: {
     run: <T = unknown>(model: string, inputs: unknown) => Promise<T>

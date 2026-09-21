@@ -317,7 +317,7 @@ function authorizationCopy(locale: AppLocale) {
       trashDetail: '仅软删除；MCP 不提供永久清除功能。',
       privacy: '隐私',
       privacyDetail: (clientName: string) =>
-        `Cloudflare 托管静态加密的服务数据。只有工具读取笔记时，内容才会发送给 ${clientName}，之后由该客户端的隐私政策约束。`,
+        `\u6570\u636e\u7531\u5f53\u524d Inkstone \u90e8\u7f72\u5b58\u50a8\u3002\u53ea\u6709\u5de5\u5177\u8bfb\u53d6\u7b14\u8bb0\u65f6\uff0c\u5185\u5bb9\u624d\u4f1a\u53d1\u9001\u7ed9 ${clientName}\uff0c\u4e4b\u540e\u7531\u8be5\u5ba2\u6237\u7aef\u7684\u9690\u79c1\u653f\u7b56\u7ea6\u675f\u3002`,
       cancel: '取消',
       allowAccess: '允许访问',
       signInTitle: (clientName: string) => `登录以授权 ${clientName}`,
@@ -354,7 +354,7 @@ function authorizationCopy(locale: AppLocale) {
     trashDetail: 'Soft-delete only. Permanent purge is not exposed through MCP.',
     privacy: 'Privacy',
     privacyDetail: (clientName: string) =>
-      `Cloudflare hosts the encrypted-at-rest service data. Note content is sent to ${clientName} only when a tool reads it, then follows that client’s privacy policy.`,
+      `This Inkstone deployment stores the service data. Note content is sent to ${clientName} only when a tool reads it, then follows that client’s privacy policy.`,
     cancel: 'Cancel',
     allowAccess: 'Allow access',
     signInTitle: (clientName: string) => `Sign in to authorize ${clientName}`,

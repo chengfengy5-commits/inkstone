@@ -72,14 +72,18 @@ export function createApp() {
     if (!c.get('userId')) return c.json({ ok: true })
     return c.json({
       ok: true,
+      runtime: c.env.RUNTIME_NAME ?? 'cloudflare',
       database: 'ready',
       fts: database.ftsEnabled,
-      r2: Boolean(c.env.FILES),
+      r2: Boolean(c.env.FILES) && c.env.RUNTIME_NAME !== 'vps',
       kv: Boolean(c.env.FILES_KV),
-      attachmentStorage: selectAttachmentStorage(c.env),
+      attachmentStorage: c.env.ATTACHMENT_STORAGE_NAME ?? selectAttachmentStorage(c.env),
       realtime: Boolean(c.env.SYNC_HUB),
+      semanticSearch: Boolean(c.env.AI),
       credentialVault: Boolean(c.env.CREDENTIAL_VAULT),
       mcp: Boolean(c.env.OAUTH_KV),
+      version: c.env.APP_VERSION ?? null,
+      revision: c.env.SOURCE_REVISION ?? null,
       time: Date.now(),
     })
   })

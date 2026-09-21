@@ -69,7 +69,7 @@ const config: UserConfigFnPromise = async ({ mode, command }) => ({
     katexWoff2Only(),
     tailwindcss(),
     inkstonePwa(),
-    ...(mode === 'demo'
+    ...(mode === 'demo' || mode === 'vps'
       ? []
       : [
           (await import('@cloudflare/vite-plugin')).cloudflare({
@@ -101,7 +101,7 @@ const config: UserConfigFnPromise = async ({ mode, command }) => ({
   },
 
   build: {
-    ...(mode === 'demo' ? { outDir: 'dist/demo' } : {}),
+    ...(mode === 'demo' ? { outDir: 'dist/demo' } : mode === 'vps' ? { outDir: 'dist/client' } : {}),
     target: 'esnext',
     sourcemap: false,
     chunkSizeWarningLimit: 250,

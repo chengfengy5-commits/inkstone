@@ -52,6 +52,10 @@ Every new account automatically receives two standard starter notes, one in Chin
 
 ## Deployment
 
+For a Cloudflare-independent single-server deployment, see [VPS deployment](./docs/vps-deployment.md). It uses the production Node 24 container, local SQLite and filesystem storage, loopback-only port exposure, Nginx/TLS, health checks, and matched backup/restore procedures.
+
+For Cloudflare Workers:
+
 1. Fork the Inkstone repository to your GitHub account.
 2. Open [Cloudflare Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages/create).
 3. Select **Continue with GitHub**, then choose your forked repository.
@@ -82,6 +86,8 @@ Existing databases are upgraded automatically through versioned, idempotent migr
 | `npm run i18n:check` | Verify parity between the English and Chinese locale resources |
 | `npm run comments:check` | Enforce the source-comment policy |
 | `npm run build` | Type-check and create a production build |
+| `npm run build:vps` | Type-check and create the VPS client and Node server build |
+| `npm run test:vps` | Run local-storage adapter and VPS runtime integration tests |
 | `npm run deploy:kv` | Build and deploy with `wrangler.kv.toml` |
 | `npm run deploy:demo` | Build and deploy the static browser-only demo |
 | `npm run test:e2e` | Exercise the API against a running disposable local instance |

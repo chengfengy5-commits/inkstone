@@ -4,6 +4,7 @@ import { createMcpHandler } from 'agents/mcp/server'
 import { createApp } from '../app'
 import { initializeDatabase } from '../db/schema'
 import type { Env } from '../env'
+import { trustedRequestClientIp } from '../lib/request'
 import { consumeAttemptBudget, ThrottleError } from '../lib/throttle'
 import { verifyMcpApiKey } from './api-keys'
 import { createInkstoneMcpServer, type McpAuthProps } from './server'
@@ -114,7 +115,7 @@ function providerForOrigin(origin: string, env: Env): OAuthProvider<Env> {
       if (!await isMcpEnabled(env.DB)) {
         return { code: 'access_denied', description: 'MCP is disabled', status: 403 }
       }
-      const ip = request.headers.get('CF-Connecting-IP')?.slice(0, 80) || 'unknown'
+      const ip = trustedRequestClientIp(request, env.RUNTIME_NAME)
       try {
         await consumeAttemptBudget(env.DB, [{
           key: `mcp-dcr:${ip}`,

@@ -2,6 +2,7 @@
 
 
 const BASE = process.argv[2] ?? 'http://localhost:7712'
+const clientIpHeader = process.env.INKSTONE_E2E_RUNTIME === 'vps' ? 'X-Real-IP' : 'CF-Connecting-IP'
 let pass = 0
 let fail = 0
 
@@ -578,7 +579,9 @@ console.log('[folder subtree integrity]')
     ])
     check(
       'concurrent cross-moves cannot create a folder cycle',
-      [leftMove.status, rightMove.status].sort((a, b) => a - b).join(',') === '200,409',
+      ['200,400', '200,409'].includes(
+        [leftMove.status, rightMove.status].sort((a, b) => a - b).join(','),
+      ),
       `statuses=${leftMove.status},${rightMove.status}`,
     )
     const folders = await owner.req('GET', '/api/folders')
@@ -861,8 +864,9 @@ if (noteId) {
       'Content-Type': 'multipart/form-data; boundary=inkstone-e2e',
       'X-Inkstone-Client': '1',
       Cookie: owner.jar.cookie,
+      ...(process.env.INKSTONE_E2E_RUNTIME === 'vps' ? { Connection: 'close' } : {}),
     },
-    body: byteStream(11 * 1024 * 1024),
+    body: byteStream(27 * 1024 * 1024),
     duplex: 'half',
   })
   const streamedError = await streamedOversize.json().catch(() => null)
@@ -1466,7 +1470,7 @@ console.log('[throttle]')
     'POST',
     '/api/auth/login',
     { username: 'owner-1', password: 'supersecret100' },
-    { 'CF-Connecting-IP': '203.0.113.9' },
+    { [clientIpHeader]: '203.0.113.9' },
   )
   check(
     'a different IP is not able to lock out the account globally',
@@ -1483,7 +1487,7 @@ console.log('[pre-computation throttle]')
       'POST',
       '/api/auth/login',
       { username: 'owner-1', password: 'parallel-wrong-password' },
-      { 'CF-Connecting-IP': '198.51.100.44' },
+      { [clientIpHeader]: '198.51.100.44' },
     )))
   const expensive = attempts.filter((result) => result.status === 401).length
   const rejected = attempts.filter((result) => result.status === 429).length

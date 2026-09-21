@@ -164,13 +164,26 @@ async function readBytesWithinLimit(
 
 export function requestClientIp(c: {
   req: { header: (name: string) => string | undefined; raw?: Request }
+  env?: { RUNTIME_NAME?: string }
 }): string {
-  const value = c.req.header('CF-Connecting-IP')?.trim().toLowerCase()
+  if (c.req.raw) return trustedRequestClientIp(c.req.raw, c.env?.RUNTIME_NAME)
+  const isVps = c.env?.RUNTIME_NAME === 'vps'
+  const value = c.req.header(isVps ? 'X-Real-IP' : 'CF-Connecting-IP')?.trim().toLowerCase()
   if (!value) return 'local'
   // CF-Connecting-IP is injected by the Cloudflare edge and cannot be
   // spoofed there. On any other runtime the header is client-controlled,
   // so ignore it rather than trusting it for throttling.
-  if (!c.req.raw || !(c.req.raw as Request & { cf?: unknown }).cf) return 'local'
+  if (!isVps && (!c.req.raw || !(c.req.raw as Request & { cf?: unknown }).cf)) return 'local'
+  return value.replace(/[^a-f0-9:.%-]/g, '').slice(0, 64) || 'unknown'
+}
+
+export function trustedRequestClientIp(request: Request, runtimeName?: string): string {
+  const isVps = runtimeName === 'vps'
+  const value = request.headers.get(isVps ? 'X-Real-IP' : 'CF-Connecting-IP')
+    ?.trim()
+    .toLowerCase()
+  if (!value) return 'local'
+  if (!isVps && !(request as Request & { cf?: unknown }).cf) return 'local'
   return value.replace(/[^a-f0-9:.%-]/g, '').slice(0, 64) || 'unknown'
 }
 

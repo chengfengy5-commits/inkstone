@@ -15,7 +15,7 @@ const CHANGE_LOG_TRIM_META_KEY = 'change-log-trim-last-success-v1'
 const CHANGE_LOG_TRIM_LEASE_KEY = 'change-log-trim-lease-v1'
 
 
-export async function runScheduledBackups(env: Env): Promise<void> {
+export async function runScheduledBackups(env: Env, signal?: AbortSignal): Promise<void> {
   try {
     await initializeDatabase(env)
   } catch (err) {
@@ -28,6 +28,7 @@ export async function runScheduledBackups(env: Env): Promise<void> {
 
   let afterUserId = ''
   while (true) {
+    if (signal?.aborted) return
     const { results: users } = await env.DB.prepare(
       `SELECT u.id, u.settings,
               (SELECT MAX(br.started_at) FROM backup_runs br
@@ -51,6 +52,7 @@ export async function runScheduledBackups(env: Env): Promise<void> {
     if (users.length === 0) break
 
     await forEachConcurrent(users, 2, async (user) => {
+      if (signal?.aborted) return
       try {
         const settings = mergeSettings(parse(user.settings))
         const interval = BACKUP_INTERVALS[settings.backup.schedule] ?? 0
@@ -64,7 +66,7 @@ export async function runScheduledBackups(env: Env): Promise<void> {
           now,
         )) return
 
-        const run = await runBackup(env, user.id, { trigger: 'cron' })
+        const run = await runBackup(env, user.id, { trigger: 'cron', signal })
         console.log(
           `[inkstone] Scheduled backup ${user.id}: ${run.status}, ${run.results.length} targets, ${run.bytes} bytes`,
         )

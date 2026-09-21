@@ -465,7 +465,9 @@ function verifyAttachmentStream(
   source: ReadableStream<Uint8Array>,
   row: AttachmentSnapshotRow,
 ): ReadableStream<Uint8Array> {
-  const digest = new crypto.DigestStream('SHA-256')
+  const digest = new (crypto as Crypto & {
+    DigestStream: new (algorithm: 'SHA-256') => WritableStream<Uint8Array> & { digest: Promise<ArrayBuffer> }
+  }).DigestStream('SHA-256')
   const digestWriter = digest.getWriter()
   const prefixLimit = 64 * 1024
   let prefix = new Uint8Array(0)

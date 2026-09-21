@@ -182,12 +182,12 @@ syncRoutes.get('/', requireAuth, async (c) => {
 
 
 syncRoutes.get('/ws', requireAuth, async (c) => {
-  if (!c.env.SYNC_HUB) {
-    throw new ApiError(503, 'storage_unavailable', 'The realtime channel is disabled; polling will be used')
-  }
   const origin = c.req.header('Origin')
   if (origin && origin !== new URL(c.req.url).origin) {
     throw ApiError.forbidden('The realtime connection origin is not trusted')
+  }
+  if (!c.env.SYNC_HUB) {
+    throw new ApiError(503, 'storage_unavailable', 'The realtime channel is disabled; polling will be used')
   }
   if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
     throw ApiError.badRequest('This endpoint accepts only WebSocket upgrade requests')

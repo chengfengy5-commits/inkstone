@@ -33,10 +33,10 @@ export async function handleRequest(
   return provider.fetch(oauthRequest, env, ctx)
 }
 
-export async function runScheduledMaintenance(env: Env): Promise<void> {
+export async function runScheduledMaintenance(env: Env, signal?: AbortSignal): Promise<void> {
   await initializeDatabase(env)
   await Promise.all([
-    runScheduledBackups(env),
+    runScheduledBackups(env, signal),
     runAttachmentCleanup(env),
     purgeExpiredMcpOperations(env.DB),
     purgeExpiredOperationalData(env.DB),

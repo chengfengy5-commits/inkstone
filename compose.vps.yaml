@@ -1,0 +1,36 @@
+services:
+  inkstone:
+    image: inkstone:${INKSTONE_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INKSTONE_VERSION: ${INKSTONE_VERSION:-0.8.0}
+        INKSTONE_REVISION: ${INKSTONE_REVISION:?set INKSTONE_REVISION to the deployed Git commit}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10m
+    ports:
+      - "127.0.0.1:${INKSTONE_LISTEN_PORT:-17712}:7712"
+    environment:
+      INKSTONE_PUBLIC_URL: ${INKSTONE_PUBLIC_URL:?set INKSTONE_PUBLIC_URL to the HTTPS origin}
+      INKSTONE_VAULT_KEY_PATH: /data/secrets/vault.key
+      INKSTONE_MAINTENANCE_INTERVAL_MS: ${INKSTONE_MAINTENANCE_INTERVAL_MS:-900000}
+    volumes:
+      - ${INKSTONE_DATA_PATH:-/opt/inkstone/data}:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.5
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7712/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

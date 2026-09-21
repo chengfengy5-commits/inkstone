@@ -69,6 +69,7 @@ const TEST_TIMEOUT_MS = 20_000
 export interface RunOptions {
   trigger: 'manual' | 'cron'
   targetIds?: string[]
+  signal?: AbortSignal
 }
 
 
@@ -102,6 +103,7 @@ async function runBackupUnlocked(
 ): Promise<BackupRun> {
   const startedAt = Date.now()
   const runId = newId()
+  options.signal?.throwIfAborted()
 
   const targets = await loadTargets(env, userId, options.targetIds)
   if (!targets.length) {
@@ -123,6 +125,7 @@ async function runBackupUnlocked(
   let snapshot: Snapshot
   try {
     snapshot = await buildSnapshot(env, userId)
+    options.signal?.throwIfAborted()
   } catch (error) {
     const message = friendlyError(error)
     const results: BackupTargetResult[] = targets.map((target) => ({
@@ -152,7 +155,7 @@ async function runBackupUnlocked(
 
   const results = new Array<BackupTargetResult>(targets.length)
   await forEachConcurrent(targets, 2, async (target, index) => {
-    results[index] = await deliverToTarget(env, target, snapshot)
+    results[index] = await deliverToTarget(env, target, snapshot, options.signal)
   })
 
   const okCount = results.filter((r) => r.ok).length
@@ -176,6 +179,7 @@ async function deliverToTarget(
   env: Env,
   target: TargetRow,
   snapshot: Snapshot,
+  shutdownSignal?: AbortSignal,
 ): Promise<BackupTargetResult> {
   const started = Date.now()
   const base: Omit<BackupTargetResult, 'ok' | 'files' | 'bytes' | 'ms' | 'error'> = {
@@ -195,6 +199,9 @@ async function deliverToTarget(
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController()
+      const abortForShutdown = () => controller.abort(shutdownSignal?.reason)
+      if (shutdownSignal?.aborted) abortForShutdown()
+      else shutdownSignal?.addEventListener('abort', abortForShutdown, { once: true })
       const timer = setTimeout(() => controller.abort(), targetTimeoutMs(snapshot))
       try {
         const outcome =
@@ -203,9 +210,11 @@ async function deliverToTarget(
             : await webdavDeliver(config, secret, snapshot, controller.signal)
         return { ...base, ok: true, files: outcome.files, bytes: outcome.bytes, ms: Date.now() - started, error: null }
       } catch (error) {
+        if (shutdownSignal?.aborted) throw error
         if (attempt > 0 || !isTransientBackupError(error)) throw error
       } finally {
         clearTimeout(timer)
+        shutdownSignal?.removeEventListener('abort', abortForShutdown)
       }
     }
     throw new Error('Backup transfer did not complete')

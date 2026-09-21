@@ -231,7 +231,7 @@ transferRoutes.post('/import', async (c) => {
             c,
             userId,
             entries.map((entry) => ({
-              file: new File([entry.data], entry.path.split('/').at(-1) ?? 'file'),
+              file: new File([Uint8Array.from(entry.data)], entry.path.split('/').at(-1) ?? 'file'),
               path: entry.path.slice(backup.rootPrefix.length),
             })),
             backup.manifest,

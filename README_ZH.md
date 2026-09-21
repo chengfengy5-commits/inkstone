@@ -53,6 +53,10 @@ Inkstone 是运行在 Cloudflare Workers 上的浏览器笔记本。笔记始终
 
 ## 部署教程
 
+不依赖 Cloudflare 的单机部署请阅读 [VPS 部署指南](./docs/vps-deployment.md)。该方案使用 Node 24 生产容器、本地 SQLite 和文件存储、仅回环地址端口、Nginx/TLS、健康检查以及成套备份恢复流程。
+
+Cloudflare Workers 部署步骤：
+
 1. Fork Inkstone 仓库到自己的 GitHub 账号
 2. 进入 [Cloudflare Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages/create)
 3. 选择 Continue with GitHub 并选择你的仓库
@@ -83,6 +87,8 @@ Inkstone 是运行在 Cloudflare Workers 上的浏览器笔记本。笔记始终
 | `npm run i18n:check` | 检查中英文资源键是否完整一致 |
 | `npm run comments:check` | 检查源码注释规范 |
 | `npm run build` | 类型检查并生成生产构建 |
+| `npm run build:vps` | 类型检查并生成 VPS 前端与 Node 服务构建 |
+| `npm run test:vps` | 运行本地存储适配器与 VPS 运行时集成测试 |
 | `npm run deploy:kv` | 使用 `wrangler.kv.toml` 构建并部署 |
 | `npm run deploy:demo` | 构建并部署纯静态体验版 |
 | `npm run test:e2e` | 对正在运行的临时本地实例执行 API 端到端测试 |

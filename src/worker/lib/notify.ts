@@ -80,9 +80,12 @@ export function scheduleFtsDrain(c: Context<AppBindings>, max = 5): void {
     rerun: false,
     promise: Promise.resolve(),
   }
-  scheduled.promise = new Promise<void>((resolve) => {
-    setTimeout(resolve, FTS_DRAIN_DELAY_MS + 2_000)
-  })
+  const ready = c.env.RUNTIME_NAME === 'vps'
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+        setTimeout(resolve, FTS_DRAIN_DELAY_MS + 2_000)
+      })
+  scheduled.promise = ready
     .then(async () => {
       do {
         scheduled.rerun = false
