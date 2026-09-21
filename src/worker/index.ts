@@ -20,30 +20,38 @@ export { CredentialVault } from './durable/credential-vault'
 // parameter is still appended to callbacks for conforming clients.
 const OAUTH_AUTHORIZATION_SERVER_METADATA = '/.well-known/oauth-authorization-server'
 
+export async function handleRequest(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const oauthRequest = await normalizeRepeatedOAuthResource(request)
+  const provider = createOAuthProvider(oauthRequest, env)
+  if (new URL(oauthRequest.url).pathname === OAUTH_AUTHORIZATION_SERVER_METADATA) {
+    return oauthMetadataWithoutIssParameter(provider, oauthRequest, env, ctx)
+  }
+  return provider.fetch(oauthRequest, env, ctx)
+}
+
+export async function runScheduledMaintenance(env: Env): Promise<void> {
+  await initializeDatabase(env)
+  await Promise.all([
+    runScheduledBackups(env),
+    runAttachmentCleanup(env),
+    purgeExpiredMcpOperations(env.DB),
+    purgeExpiredOperationalData(env.DB),
+    purgeRevokedMcpApiKeys(env.DB),
+    providerForScheduled(env).purgeExpiredData(env, { batchSize: 100 }),
+    drainAiIndexQueue(env, 300),
+    drainAllFtsQueues(env.DB),
+  ])
+}
+
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const oauthRequest = await normalizeRepeatedOAuthResource(request)
-    const provider = createOAuthProvider(oauthRequest, env)
-    if (new URL(oauthRequest.url).pathname === OAUTH_AUTHORIZATION_SERVER_METADATA) {
-      return oauthMetadataWithoutIssParameter(provider, oauthRequest, env, ctx)
-    }
-    return provider.fetch(oauthRequest, env, ctx)
-  },
+  fetch: handleRequest,
 
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil((async () => {
-      await initializeDatabase(env)
-      await Promise.all([
-        runScheduledBackups(env),
-        runAttachmentCleanup(env),
-        purgeExpiredMcpOperations(env.DB),
-        purgeExpiredOperationalData(env.DB),
-        purgeRevokedMcpApiKeys(env.DB),
-        providerForScheduled(env).purgeExpiredData(env, { batchSize: 100 }),
-        drainAiIndexQueue(env, 300),
-        drainAllFtsQueues(env.DB),
-      ])
-    })())
+    ctx.waitUntil(runScheduledMaintenance(env))
   },
 } satisfies ExportedHandler<Env>
 

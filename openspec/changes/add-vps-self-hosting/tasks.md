@@ -4,8 +4,8 @@
 
 - [x] 1.1 Create a dedicated `feature/vps-self-hosting` branch from the clean Fork baseline and verify `origin`, read-only `upstream`, and branch status are correct.
 - [x] 1.2 Commit the OpenSpec planning artifacts as the first auditable change and verify `openspec validate add-vps-self-hosting --strict` passes.
-- [ ] 1.3 Add only the Node runtime, server, build, and test dependencies required by the design; verify a clean Node 24 `npm ci` succeeds.
-- [ ] 1.4 Refactor the Worker fetch and scheduled-maintenance entry points into shared functions without changing Cloudflare behavior; verify existing unit tests and the Cloudflare deploy dry run pass.
+- [x] 1.3 Add only the Node runtime, server, build, and test dependencies required by the design; verify a clean Node 24 `npm ci` succeeds.
+- [x] 1.4 Refactor the Worker fetch and scheduled-maintenance entry points into shared functions without changing Cloudflare behavior; verify existing unit tests and the Cloudflare deploy dry run pass.
 
 ## 2. Implement and test local persistence adapters
 
