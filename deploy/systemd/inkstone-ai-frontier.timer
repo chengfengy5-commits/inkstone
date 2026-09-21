@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Inkstone AI frontier collector every morning
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=10m
+AccuracySec=1m
+Unit=inkstone-ai-frontier.service
+
+[Install]
+WantedBy=timers.target
