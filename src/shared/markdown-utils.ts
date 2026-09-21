@@ -479,6 +479,8 @@ function markdownExampleBodies(text: string): string[] {
         // A closing fence may only be followed by spaces or tabs.
         bodies.push(collecting.join('\n'))
         collecting = null
+      } else {
+        collecting.push(line)
       }
       continue
     }
