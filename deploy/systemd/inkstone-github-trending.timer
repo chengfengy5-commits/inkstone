@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Inkstone GitHub Trending collector every morning
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=10m
+AccuracySec=1m
+Unit=inkstone-github-trending.service
+
+[Install]
+WantedBy=timers.target
