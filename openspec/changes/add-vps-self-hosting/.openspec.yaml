@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-21
+goal: Run Inkstone on a single VPS without Cloudflare runtime dependencies while
+  preserving the approved first-release feature set.
