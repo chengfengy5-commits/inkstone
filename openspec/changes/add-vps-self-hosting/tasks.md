@@ -42,7 +42,7 @@
 
 - [x] 6.1 Run the complete Node 24 verification suite: typecheck, unit tests, i18n check, comment check, VPS integration tests, VPS build, Cloudflare build/dry run, and clean-image smoke test; record results and resolve all in-scope failures.
 - [x] 6.2 Review the full branch diff against the OpenSpec requirements, run `git diff --check`, confirm the worktree is clean after commits, and push the feature branch to the owner's GitHub Fork.
-- [ ] 6.3 Back up the target VPS configuration, deploy the exact pushed commit without modifying existing services, and verify the container, loopback port, readiness, logs, persistent paths, and restart behavior.
+- [x] 6.3 Back up the target VPS configuration, deploy the exact pushed commit without modifying existing services, and verify the container, loopback port, readiness, logs, persistent paths, and restart behavior.
 - [ ] 6.4 Configure `inkstone.ai-dark.top` only if DNS resolves to the VPS, install a separate Nginx TLS virtual host, and verify HTTPS, security headers, request-size limits, and no conflict with existing sites.
 - [ ] 6.5 Execute the approved live workflow through the deployed UI and API, including note/search/attachment/share/export/restart/backup/MCP checks, and record evidence for each OpenSpec scenario.
 - [ ] 6.6 Run the grill-me verification pass against the approved plan, make only snapshot-protected minimal repairs if needed, rerun the complete verification, and report the final Git commit and deployed version.
