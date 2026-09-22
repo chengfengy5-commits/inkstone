@@ -11,9 +11,12 @@ const TAG_RE = /(^|[\s(\uff08[\u3010>\u300c\u300e\uff0c,\u3001;\uff1b])#([\p{L}\
 const WIKI_RE = /\[\[[^[\]\n]{1,200}\]\]/g
 const TASK_DONE_RE = /^((?:[ \t]*>[ \t]?)*[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[[xX]\][ \t]+)(.*)$/
 
-function buildDecorations(view: EditorView): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>()
+export function buildMarkdownDecorations(view: EditorView): DecorationSet {
   const tree = syntaxTree(view.state)
+  const decorations = new Map<string, { from: number; to: number; deco: Decoration }>()
+  const add = (from: number, to: number, deco: Decoration, kind: string) => {
+    decorations.set(`${from}:${to}:${kind}`, { from, to, deco })
+  }
 
   for (const { from, to } of view.visibleRanges) {
 
@@ -28,7 +31,6 @@ function buildDecorations(view: EditorView): DecorationSet {
       },
     })
 
-    const markDecorations: { from: number; to: number; deco: Decoration }[] = []
     const startLine = view.state.doc.lineAt(from).number
     const endLine = view.state.doc.lineAt(to).number
 
@@ -39,42 +41,23 @@ function buildDecorations(view: EditorView): DecorationSet {
 
       const done = TASK_DONE_RE.exec(text)
       if (done && done[2]) {
-        markDecorations.push({
-          from: line.from + done[1]!.length,
-          to: line.to,
-          deco: taskDone,
-        })
+        add(line.from + done[1]!.length, line.to, taskDone, 'task')
       }
 
       TAG_RE.lastIndex = 0
       for (const match of text.matchAll(TAG_RE)) {
         const offset = (match.index ?? 0) + (match[1]?.length ?? 0)
-        markDecorations.push({
-          from: line.from + offset,
-          to: line.from + offset + 1 + match[2]!.length,
-          deco: tagMark,
-        })
+        add(line.from + offset, line.from + offset + 1 + match[2]!.length, tagMark, 'tag')
       }
 
       WIKI_RE.lastIndex = 0
       for (const match of text.matchAll(WIKI_RE)) {
-        markDecorations.push({
-          from: line.from + (match.index ?? 0),
-          to: line.from + (match.index ?? 0) + match[0].length,
-          deco: wikiMark,
-        })
+        add(line.from + (match.index ?? 0), line.from + (match.index ?? 0) + match[0].length, wikiMark, 'wiki')
       }
     }
-
-
-    const all = [
-      ...markDecorations.map((d) => ({ ...d, line: false })),
-    ].sort((a, b) => a.from - b.from || (a.line === b.line ? 0 : a.line ? -1 : 1))
-
-    for (const item of all) builder.add(item.from, item.to, item.deco)
   }
 
-  return builder.finish()
+  return Decoration.set([...decorations.values()].map((item) => item.deco.range(item.from, item.to)), true)
 }
 
 export const markdownDecorations = ViewPlugin.fromClass(
@@ -82,12 +65,12 @@ export const markdownDecorations = ViewPlugin.fromClass(
     decorations: DecorationSet
 
     constructor(view: EditorView) {
-      this.decorations = buildDecorations(view)
+      this.decorations = buildMarkdownDecorations(view)
     }
 
     update(update: ViewUpdate) {
       if (update.docChanged || update.viewportChanged) {
-        this.decorations = buildDecorations(update.view)
+        this.decorations = buildMarkdownDecorations(update.view)
       }
     }
   },
