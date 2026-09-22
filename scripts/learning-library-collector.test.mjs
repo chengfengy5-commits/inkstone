@@ -6,6 +6,7 @@ import test from 'node:test'
 import {
   contentKeyForCandidate,
   createRunRecorder,
+  learningNoteOperationId,
   normalizeContentUrl,
   parseArchiveTree,
   parseGitTree,
@@ -298,6 +299,7 @@ test('reuses stable MCP operation ids after a partial write failure', async () =
     overview: '两篇固定夹具。',
     closing: '依次阅读。',
     warnings: [],
+    selectedContentKeys: ['github:example/repository', 'url:https://example.com/article'],
     items: [
       pendingItem('github', '仓库笔记'),
       pendingItem('article', '文章笔记'),
@@ -317,7 +319,9 @@ test('reuses stable MCP operation ids after a partial write failure', async () =
     }),
     /injected MCP failure/,
   )
-  assert.deepEqual([...client.notesByOperation.keys()], ['learning-library-note-2026-09-22-01'])
+  assert.deepEqual([...client.notesByOperation.keys()], [
+    learningNoteOperationId(pending.date, pending.selectedContentKeys[0]),
+  ])
 
   const result = await writePendingToInkstone(pending, client, folders, {
     date: pending.date,
@@ -327,8 +331,8 @@ test('reuses stable MCP operation ids after a partial write failure', async () =
   assert.equal(result.created.length, 2)
   assert.equal(client.notesByOperation.size, 3)
   assert.deepEqual([...client.notesByOperation.keys()], [
-    'learning-library-note-2026-09-22-01',
-    'learning-library-note-2026-09-22-02',
+    learningNoteOperationId(pending.date, pending.selectedContentKeys[0]),
+    learningNoteOperationId(pending.date, pending.selectedContentKeys[1]),
     'learning-library-index-2026-09-22',
   ])
   assert.deepEqual(progress.at(-1), {
@@ -336,6 +340,16 @@ test('reuses stable MCP operation ids after a partial write failure', async () =
     writtenNotes: 2,
     writtenIndex: 1,
   })
+})
+
+test('uses different stable operation ids for different content on the same date', () => {
+  const first = learningNoteOperationId('2026-09-22', 'github:openai/codex')
+  const retry = learningNoteOperationId('2026-09-22', 'github:openai/codex')
+  const replacement = learningNoteOperationId('2026-09-22', 'github:vllm-project/vllm')
+
+  assert.equal(first, retry)
+  assert.notEqual(first, replacement)
+  assert.match(first, /^learning-library-note-2026-09-22-[a-f0-9]{16}$/)
 })
 
 function candidate(overrides = {}) {

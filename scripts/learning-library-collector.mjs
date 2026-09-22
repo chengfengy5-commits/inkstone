@@ -220,8 +220,12 @@ export async function writePendingToInkstone(pending, client, folders, options =
   const created = []
 
   for (const [index, item] of pending.items.entries()) {
+    const contentKey = pending.selectedContentKeys?.[index]
+    const operationId = contentKey
+      ? learningNoteOperationId(date, contentKey)
+      : `learning-library-note-${date}-${String(index + 1).padStart(2, '0')}`
     const result = await client.callTool('create_note', {
-      operation_id: `learning-library-note-${date}-${String(index + 1).padStart(2, '0')}`,
+      operation_id: operationId,
       title: item.title,
       content: item.content,
       folder_id: folders[item.sourceKind].id,
@@ -265,6 +269,11 @@ export async function writePendingToInkstone(pending, client, folders, options =
   }
   await onProgress({ stage: 'writing-index', writtenNotes: created.length, writtenIndex: 1 })
   return { created }
+}
+
+export function learningNoteOperationId(date, contentKey) {
+  const digest = createHash('sha256').update(String(contentKey)).digest('hex').slice(0, 16)
+  return `learning-library-note-${date}-${digest}`
 }
 
 async function ensureFolders(client) {
