@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import {
   contentKeyForCandidate,
+  createRunRecorder,
   normalizeContentUrl,
   parseArchiveTree,
   parseGitTree,
@@ -13,6 +17,7 @@ import {
   selectKeyPaths,
   validateSingleReport,
   validateSelection,
+  writePendingToInkstone,
 } from './learning-library-collector.mjs'
 
 test('parses RSS CDATA, source links, discussion links, and categories', () => {
@@ -245,6 +250,94 @@ test('renders a compact daily index that links every standalone note', () => {
   assert.doesNotMatch(markdown, /## 背景与问题/)
 })
 
+test('persists run stages and redacts credentials while preserving retry context', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'inkstone-learning-run-'))
+  const path = join(directory, 'run.json')
+  const timestamps = [
+    '2026-09-22T01:00:00.000Z',
+    '2026-09-22T01:01:00.000Z',
+    '2026-09-22T01:02:00.000Z',
+    '2026-09-22T01:03:00.000Z',
+  ]
+  const now = () => timestamps.shift() || '2026-09-22T01:04:00.000Z'
+  try {
+    const first = await createRunRecorder(path, '2026-09-22', { now })
+    await first.update('selecting', {
+      counts: { collected: 42, deduplicated: 17 },
+      warnings: ['RSS Feeds: one source timed out'],
+    })
+    await first.fail(new Error('Authorization: Bearer super-secret ink_private_key https://api.example.test?q=ok&api_key=query-secret token=plain-secret'))
+
+    const failed = JSON.parse(await readFile(path, 'utf8'))
+    assert.equal(failed.attempt, 1)
+    assert.equal(failed.stage, 'selecting')
+    assert.equal(failed.result, 'failed')
+    assert.equal(failed.counts.collected, 42)
+    assert.deepEqual(failed.warnings, ['RSS Feeds: one source timed out'])
+    assert.doesNotMatch(failed.error, /super-secret|ink_private_key|query-secret|plain-secret/)
+    assert.match(failed.error, /\[REDACTED\]/)
+
+    const retry = await createRunRecorder(path, '2026-09-22', { now })
+    assert.equal(retry.state.attempt, 2)
+    assert.deepEqual(retry.state.lastFailure, {
+      stage: 'selecting',
+      error: failed.error,
+      at: failed.finishedAt,
+    })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('reuses stable MCP operation ids after a partial write failure', async () => {
+  const client = new IdempotentFakeMcpClient({ failOnceAtCall: 2 })
+  const progress = []
+  const pending = {
+    date: '2026-09-22',
+    headline: '今日重点',
+    overview: '两篇固定夹具。',
+    closing: '依次阅读。',
+    warnings: [],
+    items: [
+      pendingItem('github', '仓库笔记'),
+      pendingItem('article', '文章笔记'),
+    ],
+  }
+  const folders = {
+    index: { id: 'folder-index' },
+    github: { id: 'folder-github' },
+    article: { id: 'folder-article' },
+    community: { id: 'folder-community' },
+  }
+
+  await assert.rejects(
+    writePendingToInkstone(pending, client, folders, {
+      date: pending.date,
+      onProgress: async (event) => progress.push(event),
+    }),
+    /injected MCP failure/,
+  )
+  assert.deepEqual([...client.notesByOperation.keys()], ['learning-library-note-2026-09-22-01'])
+
+  const result = await writePendingToInkstone(pending, client, folders, {
+    date: pending.date,
+    onProgress: async (event) => progress.push(event),
+  })
+
+  assert.equal(result.created.length, 2)
+  assert.equal(client.notesByOperation.size, 3)
+  assert.deepEqual([...client.notesByOperation.keys()], [
+    'learning-library-note-2026-09-22-01',
+    'learning-library-note-2026-09-22-02',
+    'learning-library-index-2026-09-22',
+  ])
+  assert.deepEqual(progress.at(-1), {
+    stage: 'writing-index',
+    writtenNotes: 2,
+    writtenIndex: 1,
+  })
+})
+
 function candidate(overrides = {}) {
   const sourceKind = overrides.sourceKind || 'github'
   return {
@@ -289,5 +382,43 @@ function createdItem(sourceKind, title, url) {
     whatGood: ['结构清晰', '验证充分'],
     tags: ['方向/架构设计'],
     note: { url },
+  }
+}
+
+function pendingItem(sourceKind, title) {
+  return {
+    id: `${sourceKind}:${title}`,
+    sourceKind,
+    title,
+    whyLearn: '值得深入学习。',
+    whatGood: ['结构清晰', '验证充分'],
+    tags: ['方向/架构设计'],
+    content: `# ${title}`,
+  }
+}
+
+class IdempotentFakeMcpClient {
+  constructor({ failOnceAtCall }) {
+    this.failOnceAtCall = failOnceAtCall
+    this.callCount = 0
+    this.failed = false
+    this.notesByOperation = new Map()
+  }
+
+  async callTool(name, args) {
+    this.callCount += 1
+    if (!this.failed && this.callCount === this.failOnceAtCall) {
+      this.failed = true
+      throw new Error('injected MCP failure')
+    }
+    if (name !== 'create_note') throw new Error(`unexpected tool ${name}`)
+    if (!this.notesByOperation.has(args.operation_id)) {
+      const number = this.notesByOperation.size + 1
+      this.notesByOperation.set(args.operation_id, {
+        id: `note-${number}`,
+        url: `https://inkstone.example/notes/${number}`,
+      })
+    }
+    return { structuredContent: { data: { note: this.notesByOperation.get(args.operation_id) } } }
   }
 }

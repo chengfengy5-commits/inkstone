@@ -21,6 +21,7 @@ const PENDING_PATH = join(STATE_DIRECTORY, `library-pending-${TODAY}.json`)
 const SUCCESS_PATH = join(STATE_DIRECTORY, 'library-last-success-date')
 const SEEN_PATH = join(STATE_DIRECTORY, 'library-seen-items.json')
 const REPORT_CACHE_PATH = join(STATE_DIRECTORY, `library-report-cache-${TODAY}.json`)
+const RUN_STATE_PATH = join(STATE_DIRECTORY, `library-run-${TODAY}.json`)
 const LEGACY_SEEN_PATH = join(STATE_DIRECTORY, 'seen-items.json')
 const SEEN_RETENTION_DAYS = 60
 const UPDATE_INDEX_NOTE_ID = (process.env.UPDATE_INDEX_NOTE_ID || '').trim()
@@ -108,73 +109,49 @@ const RSS_FEEDS = [
 ]
 
 async function main() {
-  if (!UPDATE_INDEX_NOTE_ID && (await readOptional(SUCCESS_PATH)).trim() === TODAY) {
-    console.log(`[learning-library] ${TODAY} already collected; skipping`)
-    return
+  const run = await createRunRecorder(RUN_STATE_PATH, TODAY)
+  try {
+    if (!UPDATE_INDEX_NOTE_ID && (await readOptional(SUCCESS_PATH)).trim() === TODAY) {
+      await run.finish('skipped', { stage: 'succeeded' })
+      console.log(`[learning-library] ${TODAY} already collected; skipping`)
+      return
+    }
+
+    const pending = await loadOrCreatePending((stage, patch) => run.update(stage, patch))
+    await run.update('writing-notes', {
+      counts: { selected: pending.items.length, ...(pending.candidateStats || {}) },
+      warnings: pending.warnings,
+    })
+    const mcpToken = await readCredential('mcp-token')
+    const client = new McpClient(`${INKSTONE_BASE_URL}/mcp`, mcpToken)
+    await client.initialize()
+    const folders = await ensureFolders(client)
+    const { created } = await writePendingToInkstone(pending, client, folders, {
+      onProgress: ({ stage, writtenNotes, writtenIndex }) => run.update(stage, {
+        counts: { writtenNotes, writtenIndex },
+      }),
+    })
+
+    const seen = pruneSeen(await loadSeen())
+    if (UPDATE_INDEX_NOTE_ID) removeSeenDate(seen, TODAY)
+    const selectedContentKeys = pending.selectedContentKeys?.length ? pending.selectedContentKeys : pending.selectedIds
+    for (const contentKey of selectedContentKeys) seen[contentKey] = TODAY
+    await atomicWrite(SEEN_PATH, `${JSON.stringify(seen, null, 2)}\n`)
+    await atomicWrite(SUCCESS_PATH, `${TODAY}\n`)
+    await rm(PENDING_PATH, { force: true })
+    await rm(REPORT_CACHE_PATH, { force: true })
+    await run.finish('succeeded', {
+      stage: 'succeeded',
+      counts: { writtenNotes: created.length, writtenIndex: 1 },
+    })
+    console.log(`[learning-library] wrote ${created.length} learning notes and one index for ${TODAY}`)
+  } catch (error) {
+    try { await run.fail(error) } catch {}
+    throw error
   }
-
-  const pending = await loadOrCreatePending()
-  const mcpToken = await readCredential('mcp-token')
-  const client = new McpClient(`${INKSTONE_BASE_URL}/mcp`, mcpToken)
-  await client.initialize()
-  const folders = await ensureFolders(client)
-  const created = []
-
-  for (const [index, item] of pending.items.entries()) {
-    const result = await client.callTool('create_note', {
-      operation_id: `learning-library-note-${TODAY}-${String(index + 1).padStart(2, '0')}`,
-      title: item.title,
-      content: item.content,
-      folder_id: folders[item.sourceKind].id,
-    })
-    assertToolSuccess(result, `create ${item.title}`)
-    const note = toolData(result)?.note
-    if (!note?.id || !note?.url) throw new Error(`Inkstone returned no note reference for ${item.title}`)
-    created.push({ ...item, note })
-  }
-
-  const indexTitle = `技术学习索引 · ${TODAY}`
-  const indexContent = renderIndex(pending, created)
-  if (UPDATE_INDEX_NOTE_ID) {
-    const edited = await client.callTool('edit_note', {
-      operation_id: `learning-library-index-update-${TODAY}-v1`,
-      note_id: UPDATE_INDEX_NOTE_ID,
-      expected_rev: UPDATE_INDEX_EXPECTED_REV,
-      operation: 'replace_all',
-      title: indexTitle,
-      text: indexContent,
-    })
-    assertToolSuccess(edited, 'update daily index')
-    const editedNote = toolData(edited)?.note
-    const organized = await client.callTool('organize_note', {
-      operation_id: `learning-library-index-organize-${TODAY}-v1`,
-      note_id: UPDATE_INDEX_NOTE_ID,
-      expected_rev: editedNote?.rev,
-      folder_id: folders.index.id,
-    })
-    assertToolSuccess(organized, 'organize daily index')
-  } else {
-    const result = await client.callTool('create_note', {
-      operation_id: `learning-library-index-${TODAY}`,
-      title: indexTitle,
-      content: indexContent,
-      folder_id: folders.index.id,
-    })
-    assertToolSuccess(result, 'create daily index')
-  }
-
-  const seen = pruneSeen(await loadSeen())
-  if (UPDATE_INDEX_NOTE_ID) removeSeenDate(seen, TODAY)
-  const selectedContentKeys = pending.selectedContentKeys?.length ? pending.selectedContentKeys : pending.selectedIds
-  for (const contentKey of selectedContentKeys) seen[contentKey] = TODAY
-  await atomicWrite(SEEN_PATH, `${JSON.stringify(seen, null, 2)}\n`)
-  await atomicWrite(SUCCESS_PATH, `${TODAY}\n`)
-  await rm(PENDING_PATH, { force: true })
-  await rm(REPORT_CACHE_PATH, { force: true })
-  console.log(`[learning-library] wrote ${created.length} learning notes and one index for ${TODAY}`)
 }
 
-async function loadOrCreatePending() {
+async function loadOrCreatePending(updateRunState = async () => {}) {
   const existing = await readOptional(PENDING_PATH)
   if (existing) return JSON.parse(existing)
 
@@ -189,6 +166,7 @@ async function loadOrCreatePending() {
   const seen = pruneSeen(await loadSeen())
   if (UPDATE_INDEX_NOTE_ID) removeSeenDate(seen, TODAY)
   const { candidates, stats: candidateStats } = prepareCandidatePool(collected, seen)
+  await updateRunState('selecting', { counts: candidateStats, warnings })
   validateCandidatePool(candidates)
 
   const llmToken = await readCredential('llm-token')
@@ -196,12 +174,14 @@ async function loadOrCreatePending() {
   validateSelection(selection, candidates)
   const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]))
   const selected = selection.items.map((item) => ({ ...byId.get(item.id), learningAngle: item.learningAngle }))
+  await updateRunState('enriching', { counts: { selected: selected.length } })
   const enriched = await Promise.all(selected.map(async (candidate) => {
     if (candidate.sourceKind === 'github') return { ...candidate, evidence: await fetchRepositoryEvidence(candidate) }
     if (candidate.sourceKind === 'article') return enrichArticleContent(candidate)
     if (candidate.sourceKind === 'community') return enrichCommunityDiscussion(candidate)
     return candidate
   }))
+  await updateRunState('generating')
   const reportPack = await generateLearningReports(enriched, llmToken)
   validateReportPack(reportPack, enriched)
   const enrichedById = new Map(enriched.map((candidate) => [candidate.id, candidate]))
@@ -230,6 +210,61 @@ async function loadOrCreatePending() {
   }
   await atomicWrite(PENDING_PATH, `${JSON.stringify(pending)}\n`)
   return pending
+}
+
+export async function writePendingToInkstone(pending, client, folders, options = {}) {
+  const date = options.date || pending.date || TODAY
+  const updateIndexNoteId = options.updateIndexNoteId ?? UPDATE_INDEX_NOTE_ID
+  const updateIndexExpectedRev = options.updateIndexExpectedRev ?? UPDATE_INDEX_EXPECTED_REV
+  const onProgress = options.onProgress || (async () => {})
+  const created = []
+
+  for (const [index, item] of pending.items.entries()) {
+    const result = await client.callTool('create_note', {
+      operation_id: `learning-library-note-${date}-${String(index + 1).padStart(2, '0')}`,
+      title: item.title,
+      content: item.content,
+      folder_id: folders[item.sourceKind].id,
+    })
+    assertToolSuccess(result, `create ${item.title}`)
+    const note = toolData(result)?.note
+    if (!note?.id || !note?.url) throw new Error(`Inkstone returned no note reference for ${item.title}`)
+    created.push({ ...item, note })
+    await onProgress({ stage: 'writing-notes', writtenNotes: created.length, writtenIndex: 0 })
+  }
+
+  await onProgress({ stage: 'writing-index', writtenNotes: created.length, writtenIndex: 0 })
+  const indexTitle = `技术学习索引 · ${date}`
+  const indexContent = renderIndex({ ...pending, date }, created)
+  if (updateIndexNoteId) {
+    const edited = await client.callTool('edit_note', {
+      operation_id: `learning-library-index-update-${date}-v1`,
+      note_id: updateIndexNoteId,
+      expected_rev: updateIndexExpectedRev,
+      operation: 'replace_all',
+      title: indexTitle,
+      text: indexContent,
+    })
+    assertToolSuccess(edited, 'update daily index')
+    const editedNote = toolData(edited)?.note
+    const organized = await client.callTool('organize_note', {
+      operation_id: `learning-library-index-organize-${date}-v1`,
+      note_id: updateIndexNoteId,
+      expected_rev: editedNote?.rev,
+      folder_id: folders.index.id,
+    })
+    assertToolSuccess(organized, 'organize daily index')
+  } else {
+    const result = await client.callTool('create_note', {
+      operation_id: `learning-library-index-${date}`,
+      title: indexTitle,
+      content: indexContent,
+      folder_id: folders.index.id,
+    })
+    assertToolSuccess(result, 'create daily index')
+  }
+  await onProgress({ stage: 'writing-index', writtenNotes: created.length, writtenIndex: 1 })
+  return { created }
 }
 
 async function ensureFolders(client) {
@@ -270,7 +305,7 @@ async function ensureFolders(client) {
 
 async function collectOrWarn(name, callback, warnings) {
   try { return await callback() } catch (error) {
-    warnings.push(`${name}: ${error instanceof Error ? error.message : String(error)}`)
+    warnings.push(`${name}: ${redactError(error)}`)
     return []
   }
 }
@@ -952,13 +987,14 @@ export function renderLearningNote(report, source) {
 }
 
 export function renderIndex(pending, created) {
+  const date = pending.date || TODAY
   const lines = [
     '---',
-    `日期: "${TODAY}"`,
+    `日期: "${date}"`,
     '标签: ["内容类型/每日索引"]',
     '---',
     '',
-    `# 技术学习索引 · ${TODAY}`,
+    `# 技术学习索引 · ${date}`,
     '',
     `> ${pending.headline}`,
     '>',
@@ -972,7 +1008,7 @@ export function renderIndex(pending, created) {
     lines.push(`## ${FOLDER_DEFINITIONS[kind].name}`, '')
     for (const item of items) {
       lines.push(
-        `### [${escapeMarkdown(item.title.replace(`${TODAY} · `, ''))}](${item.note.url})`,
+        `### [${escapeMarkdown(item.title.replace(`${date} · `, ''))}](${item.note.url})`,
         '',
         `- **为什么值得学**：${item.whyLearn}`,
         `- **做得好**：${item.whatGood.slice(0, 2).join('；')}`,
@@ -1106,6 +1142,81 @@ async function atomicWrite(path, content) {
   const temporaryPath = `${path}.${process.pid}.tmp`
   await writeFile(temporaryPath, content, { mode: 0o600 })
   await rename(temporaryPath, path)
+}
+
+export async function createRunRecorder(path, date, options = {}) {
+  const now = options.now || (() => new Date().toISOString())
+  const existingText = await readOptional(path)
+  let existing = null
+  if (existingText) try { existing = JSON.parse(existingText) } catch {}
+  const timestamp = now()
+  let state = {
+    date,
+    attempt: existing?.date === date ? numberValue(existing.attempt) + 1 : 1,
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    finishedAt: null,
+    stage: 'collecting',
+    result: 'running',
+    counts: {
+      collected: 0,
+      eligible: 0,
+      deduplicated: 0,
+      selected: 0,
+      writtenNotes: 0,
+      writtenIndex: 0,
+      bySource: { github: 0, article: 0, community: 0 },
+    },
+    warnings: [],
+    error: null,
+    ...(existing?.date === date && existing.result === 'failed' ? {
+      lastFailure: {
+        stage: existing.stage,
+        error: redactError(existing.error),
+        at: existing.finishedAt || existing.updatedAt,
+      },
+    } : {}),
+  }
+
+  async function persist() {
+    await atomicWrite(path, `${JSON.stringify(state, null, 2)}\n`)
+    return state
+  }
+
+  async function apply(stage, patch = {}, result) {
+    const updatedAt = now()
+    const { counts, warnings, ...rest } = patch
+    state = {
+      ...state,
+      ...rest,
+      stage: stage || patch.stage || state.stage,
+      result: result || patch.result || state.result,
+      updatedAt,
+      counts: { ...state.counts, ...(counts || {}) },
+      warnings: warnings === undefined ? state.warnings : warnings.map(redactError),
+    }
+    if (result && result !== 'running') state.finishedAt = updatedAt
+    return persist()
+  }
+
+  await persist()
+  return {
+    get state() { return state },
+    update(stage, patch) { return apply(stage, patch) },
+    fail(error) { return apply(null, { error: redactError(error) }, 'failed') },
+    finish(result, patch = {}) { return apply(patch.stage || null, { ...patch, error: null }, result) },
+  }
+}
+
+export function redactError(value) {
+  const message = value instanceof Error ? value.message : String(value ?? '')
+  return message
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+    .replace(/\bink_[A-Za-z0-9._-]+/g, 'ink_[REDACTED]')
+    .replace(/\b(?:sk-|gh[opsu]_)[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')
+    .replace(/([?&](?:api[_-]?key|access[_-]?token|token|key)=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(/\b((?:token|password|secret)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
+    .slice(0, 2_000)
 }
 
 async function fetchJson(url, headers = {}, options = {}) {
