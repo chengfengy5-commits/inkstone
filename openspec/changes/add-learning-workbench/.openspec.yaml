@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-22
+goal: Stabilize Inkstone's Chinese learning library as a deduplicated, observable,
+  resumable and safely operated daily collection pipeline.
