@@ -1,0 +1,33 @@
+[Unit]
+Description=Create a curated Chinese technology learning digest in Inkstone
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=inkstone-collector
+Group=inkstone-collector
+WorkingDirectory=/opt/inkstone/source
+Environment=INKSTONE_BASE_URL=https://inkstone.ai-dark.top
+Environment=LLM_BASE_URL=http://127.0.0.1:36366/v1
+Environment=LLM_MODEL=gpt-5.6-sol
+Environment=TECH_DIGEST_TIME_ZONE=Asia/Shanghai
+LoadCredential=mcp-token:/etc/inkstone/github-trending-mcp.token
+LoadCredential=llm-token:/etc/inkstone/tech-digest-llm.token
+StateDirectory=inkstone-tech-digest
+ExecStart=/usr/bin/node /opt/inkstone/source/scripts/tech-learning-digest-collector.mjs
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
