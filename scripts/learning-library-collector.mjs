@@ -240,9 +240,10 @@ export async function writePendingToInkstone(pending, client, folders, options =
   await onProgress({ stage: 'writing-index', writtenNotes: created.length, writtenIndex: 0 })
   const indexTitle = `技术学习索引 · ${date}`
   const indexContent = renderIndex({ ...pending, date }, created)
+  const indexDigest = contentOperationDigest(indexContent)
   if (updateIndexNoteId) {
     const edited = await client.callTool('edit_note', {
-      operation_id: `learning-library-index-update-${date}-v1`,
+      operation_id: `learning-library-index-update-${date}-${indexDigest}`,
       note_id: updateIndexNoteId,
       expected_rev: updateIndexExpectedRev,
       operation: 'replace_all',
@@ -252,7 +253,7 @@ export async function writePendingToInkstone(pending, client, folders, options =
     assertToolSuccess(edited, 'update daily index')
     const editedNote = toolData(edited)?.note
     const organized = await client.callTool('organize_note', {
-      operation_id: `learning-library-index-organize-${date}-v1`,
+      operation_id: `learning-library-index-organize-${date}-${indexDigest}`,
       note_id: updateIndexNoteId,
       expected_rev: editedNote?.rev,
       folder_id: folders.index.id,
@@ -260,7 +261,7 @@ export async function writePendingToInkstone(pending, client, folders, options =
     assertToolSuccess(organized, 'organize daily index')
   } else {
     const result = await client.callTool('create_note', {
-      operation_id: `learning-library-index-${date}`,
+      operation_id: `learning-library-index-${date}-${indexDigest}`,
       title: indexTitle,
       content: indexContent,
       folder_id: folders.index.id,
@@ -272,8 +273,16 @@ export async function writePendingToInkstone(pending, client, folders, options =
 }
 
 export function learningNoteOperationId(date, contentKey) {
-  const digest = createHash('sha256').update(String(contentKey)).digest('hex').slice(0, 16)
-  return `learning-library-note-${date}-${digest}`
+  return `learning-library-note-${date}-${contentOperationDigest(contentKey)}`
+}
+
+export function learningIndexOperationId(date, content, action = 'create') {
+  const qualifier = action === 'create' ? '' : `-${action}`
+  return `learning-library-index${qualifier}-${date}-${contentOperationDigest(content)}`
+}
+
+function contentOperationDigest(content) {
+  return createHash('sha256').update(String(content)).digest('hex').slice(0, 16)
 }
 
 async function ensureFolders(client) {

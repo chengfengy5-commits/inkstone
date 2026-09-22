@@ -6,6 +6,7 @@ import test from 'node:test'
 import {
   contentKeyForCandidate,
   createRunRecorder,
+  learningIndexOperationId,
   learningNoteOperationId,
   normalizeContentUrl,
   parseArchiveTree,
@@ -330,11 +331,12 @@ test('reuses stable MCP operation ids after a partial write failure', async () =
 
   assert.equal(result.created.length, 2)
   assert.equal(client.notesByOperation.size, 3)
-  assert.deepEqual([...client.notesByOperation.keys()], [
+  const operationIds = [...client.notesByOperation.keys()]
+  assert.deepEqual(operationIds.slice(0, 2), [
     learningNoteOperationId(pending.date, pending.selectedContentKeys[0]),
     learningNoteOperationId(pending.date, pending.selectedContentKeys[1]),
-    'learning-library-index-2026-09-22',
   ])
+  assert.match(operationIds[2], /^learning-library-index-2026-09-22-[a-f0-9]{16}$/)
   assert.deepEqual(progress.at(-1), {
     stage: 'writing-index',
     writtenNotes: 2,
@@ -350,6 +352,13 @@ test('uses different stable operation ids for different content on the same date
   assert.equal(first, retry)
   assert.notEqual(first, replacement)
   assert.match(first, /^learning-library-note-2026-09-22-[a-f0-9]{16}$/)
+
+  const firstIndex = learningIndexOperationId('2026-09-22', '# 第一版')
+  const replacementIndex = learningIndexOperationId('2026-09-22', '# 第二版')
+  const updatedIndex = learningIndexOperationId('2026-09-22', '# 第二版', 'update')
+  assert.notEqual(firstIndex, replacementIndex)
+  assert.notEqual(replacementIndex, updatedIndex)
+  assert.match(updatedIndex, /^learning-library-index-update-2026-09-22-[a-f0-9]{16}$/)
 })
 
 function candidate(overrides = {}) {
