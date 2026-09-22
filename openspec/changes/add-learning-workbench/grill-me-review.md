@@ -91,3 +91,52 @@
 ### 结论
 
 第二批通过 Grill Me 复审。一个敏感信息脱敏缺口已由失败测试驱动修复；幂等重跑和索引完成边界均有直接行为证据。
+
+## 第三批：systemd 切换、运维手册与完整验证
+
+### 审查范围
+
+- `scripts/install-learning-library-collector.sh`
+- `scripts/install-learning-library-collector.test.mjs`
+- `docs/tech-learning-digest.md`
+- i18n 校验边界与完整验证矩阵
+- OpenSpec 任务 4.1–5.2
+
+### 质询与证据
+
+1. **切换是否只是复制 unit，却没有停掉旧 timer？**
+   - 结论：不是。`apply` 更新统一 service/timer，执行 daemon-reload，明确停用 GitHub Trending 与 AI Frontier timer，再启用统一 timer，并校验最终状态。
+
+2. **重复执行会不会覆盖最初的回滚依据？**
+   - 结论：不会。切换状态只在首次执行时创建；隔离测试比较两次 `apply` 后的状态文件完全一致。
+
+3. **回滚能否恢复 unit 内容和三个 timer 的原启用状态？**
+   - 结论：可以。首次切换备份原统一 service/timer，并记录统一、GitHub 和 AI 三个 timer 状态；测试在回滚后验证旧 unit 文本和三项状态全部恢复。
+
+4. **脚本会不会为了“清理”删除历史笔记、运行记录或凭据？**
+   - 结论：不会。脚本没有数据删除步骤；隔离测试在运行目录放置历史状态标记，apply、重复 apply 和 rollback 后内容均保持不变。
+
+5. **切换状态放进采集器 StateDirectory 会不会改变目录所有权，导致服务无法写入？**
+   - 初审风险：默认放入 `/var/lib/inkstone-tech-digest` 可能与 systemd `StateDirectory` 的所有权管理耦合。
+   - 修复：切换状态和 unit 备份改存独立的 `/var/lib/inkstone-learning-library-cutover`，不接触采集器数据目录。
+
+6. **中文内容生成脚本为什么导致 i18n 检查失败？是否通过禁用检查绕过？**
+   - 结论：原检查把全部 `scripts/` 当成英文 UI 源码，旧的四个中文采集器本来就会失败。修复只对五个明确命名的中文内容生成/测试文件设例外；其余源码和脚本继续执行完整 i18n 校验，没有全局关闭检查。
+
+7. **操作手册是否覆盖失败判断和恢复，而不只是启动命令？**
+   - 结论：已补充阶段字段、候选/写入计数、脱敏错误、手动重试、统一切换、检查和回滚；说明成功日期只有在全部笔记和索引完成后更新。
+
+8. **构建警告是否代表本次变更引入前端体积回归？**
+   - 结论：Vite 仍报告既有大 chunk 提示，但本批没有修改前端模块或产物拆分；构建成功，该提示记录为非阻塞既有优化项，不在本变更扩大范围。
+
+### 验证结果
+
+- 学习流水线与切换测试：16/16 通过（Node 24.15.0）。
+- Inkstone 单元测试：111/111 通过。
+- VPS 专项测试：40/40 通过。
+- 全量 TypeScript、VPS TypeScript、i18n、注释策略、shell 语法与 `git diff --check`：通过。
+- `npm run build:vps`：成功。
+
+### 结论
+
+第三批通过 Grill Me 复审。systemd 切换具备首次快照、幂等应用、无损回滚和隔离测试；i18n 例外边界被限制在明确的中文内容生成文件。代码已满足提交与推送条件，生产切换仍需单独授权。

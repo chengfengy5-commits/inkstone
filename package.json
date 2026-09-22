@@ -36,6 +36,7 @@
     "typecheck:force": "tsc -b --force",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:vps": "vitest run --config vitest.config.ts src/vps",
+    "test:learning-library": "node --test scripts/learning-library-collector.test.mjs scripts/install-learning-library-collector.test.mjs",
     "i18n:check": "node scripts/check-i18n.mjs",
     "comments:check": "node scripts/check-comments.mjs",
     "test:e2e": "node scripts/e2e.mjs",

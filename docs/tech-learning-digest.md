@@ -38,6 +38,8 @@ RSS 来源目前包括 DEV Community、Spring 官方博客、Foojay、GitHub Eng
 - 候选标题、正文、README 和评论都按不可信输入处理，不执行其中指令；
 - 待写入内容与 MCP 操作编号会持久化，失败重试不会重复创建笔记。
 - 长报告按每批两篇生成，并逐批写入断点缓存，避免一个长请求失败后全部重做。
+- 同一仓库即使同时来自 Trending、Search 和 Release，也只会保留一个学习主题；普通网页会忽略 UTM 等跟踪参数后再去重。
+- 每次执行都会原子更新一份结构化运行记录，错误信息在落盘前会清除常见 Token、API Key 和密码字段。
 
 ## Runtime
 
@@ -45,8 +47,30 @@ RSS 来源目前包括 DEV Community、Spring 官方博客、Foojay、GitHub Eng
 - Service: `inkstone-tech-digest.service`
 - Schedule: daily at 09:00 Asia/Shanghai, with up to ten minutes of jitter
 - State, pending payload and de-duplication history: `/var/lib/inkstone-tech-digest`
+- Daily run record: `/var/lib/inkstone-tech-digest/library-run-YYYY-MM-DD.json`
 - Credentials: MCP and summarization tokens loaded as root-owned systemd
   credentials; neither is stored in Git or exposed in logs
+
+运行记录中的 `stage` 依次可能为 `collecting`、`selecting`、`enriching`、`generating`、`writing-notes`、`writing-index` 和 `succeeded`。`attempt` 表示当日尝试次数，`counts` 记录候选、入选和写入数量，`lastFailure` 保留上一轮的脱敏失败阶段，方便判断任务是来源不足、模型生成失败还是 MCP 写入失败。
+
+## 首次切换统一采集器
+
+仓库保留旧采集器源码用于回滚，但生产计划任务只启用统一流水线。切换工具会备份当前 `inkstone-tech-digest` service/timer，记录三个 timer 原状态，安装当前仓库中的统一 unit，停用旧 GitHub Trending 与 AI Frontier timer，再启用统一 timer。它不会删除历史笔记、状态目录、凭据或旧 unit。
+
+```bash
+sudo ./scripts/install-learning-library-collector.sh apply
+sudo ./scripts/install-learning-library-collector.sh check
+systemctl list-timers --all | grep 'inkstone-.*\(tech-digest\|github-trending\|ai-frontier\)'
+```
+
+重复执行 `apply` 是安全的：首次切换状态不会被覆盖。需要回滚时执行：
+
+```bash
+sudo ./scripts/install-learning-library-collector.sh rollback
+sudo ./scripts/install-learning-library-collector.sh check
+```
+
+回滚会恢复切换前备份的统一 unit 文件以及三个 timer 的启用状态；仍不会删除统一采集器产生的笔记和运行记录。
 
 ## Operations
 
@@ -55,4 +79,7 @@ systemctl start inkstone-tech-digest.service
 systemctl status inkstone-tech-digest.service
 journalctl -u inkstone-tech-digest.service --since today
 systemctl list-timers inkstone-tech-digest.timer
+sudo ./scripts/install-learning-library-collector.sh check
 ```
+
+失败后先读取当天运行记录中的 `stage`、`error`、`warnings` 和 `counts`，再结合 journal 排查。修复网络、候选源、LLM 或 MCP 问题后重新执行 `systemctl start inkstone-tech-digest.service`；采集器会复用当日 pending、报告缓存和稳定 operation ID。只有全部独立笔记和索引写入成功后才更新成功日期。

@@ -47,6 +47,13 @@ const allowedHanFragments = new Map([
         '\u4e2d\u6587',
     ]],
 ]);
+const chineseContentGenerators = new Set([
+    path.resolve('scripts/ai-frontier-collector.mjs'),
+    path.resolve('scripts/github-trending-collector.mjs'),
+    path.resolve('scripts/learning-library-collector.mjs'),
+    path.resolve('scripts/learning-library-collector.test.mjs'),
+    path.resolve('scripts/tech-learning-digest-collector.mjs'),
+]);
 const english = readMessages(path.join(localeRoot, 'en-US.ts'), 'EN_US_MESSAGES');
 const chinese = readMessages(path.join(localeRoot, 'zh-CN.ts'), 'ZH_CN_MESSAGES');
 for (const key of english.keys()) {
@@ -75,7 +82,7 @@ const englishOnlyPaths = [
     path.resolve('.github'),
 ];
 for (const file of englishOnlyPaths.flatMap((target) => fs.existsSync(target) ? [...walk(target)] : [])) {
-    if (file === path.join(localeRoot, 'zh-CN.ts') || !isTextSource(file))
+    if (file === path.join(localeRoot, 'zh-CN.ts') || chineseContentGenerators.has(file) || !isTextSource(file))
         continue;
     rejectHan(file);
 }
