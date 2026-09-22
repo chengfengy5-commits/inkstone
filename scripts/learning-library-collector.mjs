@@ -165,7 +165,8 @@ async function main() {
 
   const seen = pruneSeen(await loadSeen())
   if (UPDATE_INDEX_NOTE_ID) removeSeenDate(seen, TODAY)
-  for (const id of pending.selectedIds) seen[id] = TODAY
+  const selectedContentKeys = pending.selectedContentKeys?.length ? pending.selectedContentKeys : pending.selectedIds
+  for (const contentKey of selectedContentKeys) seen[contentKey] = TODAY
   await atomicWrite(SEEN_PATH, `${JSON.stringify(seen, null, 2)}\n`)
   await atomicWrite(SUCCESS_PATH, `${TODAY}\n`)
   await rm(PENDING_PATH, { force: true })
@@ -187,7 +188,7 @@ async function loadOrCreatePending() {
   ]
   const seen = pruneSeen(await loadSeen())
   if (UPDATE_INDEX_NOTE_ID) removeSeenDate(seen, TODAY)
-  const candidates = prepareCandidates(collected, seen)
+  const { candidates, stats: candidateStats } = prepareCandidatePool(collected, seen)
   validateCandidatePool(candidates)
 
   const llmToken = await readCredential('llm-token')
@@ -223,6 +224,8 @@ async function loadOrCreatePending() {
     closing: cleanText(reportPack.closing),
     warnings,
     selectedIds: items.map((item) => item.id),
+    selectedContentKeys: selected.map(contentKeyForCandidate),
+    candidateStats,
     items,
   }
   await atomicWrite(PENDING_PATH, `${JSON.stringify(pending)}\n`)
@@ -702,17 +705,52 @@ export function selectKeyPaths(tree) {
   return selected
 }
 
-function prepareCandidates(collected, seen) {
+export function prepareCandidatePool(collected, seen) {
+  const seenKeys = new Set(Object.keys(seen).map((key) => key.toLowerCase()))
+  const stats = {
+    collected: collected.length,
+    eligible: 0,
+    deduplicated: 0,
+    filteredSeen: 0,
+    filteredSuspicious: 0,
+    bySource: { github: 0, article: 0, community: 0 },
+  }
   const deduped = new Map()
-  for (const candidate of collected) {
-    if (!candidate?.id || !candidate.url || candidate.suspicious || seen[candidate.id]) continue
-    const existing = deduped.get(candidate.id)
-    if (!existing || candidate.score > existing.score) deduped.set(candidate.id, candidate)
+  for (const sourceCandidate of collected) {
+    if (!sourceCandidate?.id || !sourceCandidate.url) continue
+    const contentKey = contentKeyForCandidate(sourceCandidate)
+    if (!contentKey) continue
+    stats.eligible += 1
+    if (sourceCandidate.suspicious) {
+      stats.filteredSuspicious += 1
+      continue
+    }
+    if (hasSeenCandidate(seenKeys, sourceCandidate, contentKey)) {
+      stats.filteredSeen += 1
+      continue
+    }
+    const candidate = { ...sourceCandidate, contentKey }
+    const existing = deduped.get(contentKey)
+    if (!existing || numberValue(candidate.score) > numberValue(existing.score)) deduped.set(contentKey, candidate)
   }
   const groups = { github: [], article: [], community: [] }
   for (const candidate of deduped.values()) groups[candidate.sourceKind]?.push(candidate)
   for (const group of Object.values(groups)) group.sort((a, b) => b.score - a.score)
-  return [...groups.github.slice(0, 24), ...groups.article.slice(0, 16), ...groups.community.slice(0, 16)]
+  const candidates = [...groups.github.slice(0, 24), ...groups.article.slice(0, 16), ...groups.community.slice(0, 16)]
+  stats.deduplicated = candidates.length
+  for (const candidate of candidates) stats.bySource[candidate.sourceKind] += 1
+  return { candidates, stats }
+}
+
+function hasSeenCandidate(seenKeys, candidate, contentKey) {
+  const normalizedId = cleanText(candidate.id).toLowerCase()
+  const normalizedContentKey = contentKey.toLowerCase()
+  if (seenKeys.has(normalizedId) || seenKeys.has(normalizedContentKey)) return true
+  if (!normalizedContentKey.startsWith('github:')) return false
+  const repository = normalizedContentKey.slice('github:'.length)
+  if (seenKeys.has(`repo:${repository}`)) return true
+  const releasePrefix = `release:${repository}:`
+  return [...seenKeys].some((key) => key.startsWith(releasePrefix))
 }
 
 function validateCandidatePool(candidates) {
@@ -728,15 +766,19 @@ async function selectLearningItems(candidates, token) {
   return callLlmJson(token, instructions, { date: TODAY, candidates: compact }, 2_000)
 }
 
-function validateSelection(selection, candidates) {
+export function validateSelection(selection, candidates) {
   if (!Array.isArray(selection?.items) || selection.items.length !== 8) throw new Error('Selection must contain exactly eight items')
   const available = new Map(candidates.map((candidate) => [candidate.id, candidate]))
   const ids = new Set()
+  const contentKeys = new Set()
   for (const item of selection.items) {
     if (!available.has(item.id)) throw new Error(`Selection contains unknown id ${item.id}`)
     if (ids.has(item.id)) throw new Error(`Selection duplicated ${item.id}`)
     if (!cleanText(item.learningAngle)) throw new Error(`Selection ${item.id} lacks learningAngle`)
+    const contentKey = contentKeyForCandidate(available.get(item.id))
+    if (contentKeys.has(contentKey)) throw new Error(`Selection duplicated content ${contentKey}`)
     ids.add(item.id)
+    contentKeys.add(contentKey)
   }
   const selected = selection.items.map((item) => available.get(item.id))
   const counts = Object.fromEntries(['github', 'article', 'community'].map((kind) => [kind, selected.filter((item) => item.sourceKind === kind).length]))
@@ -830,7 +872,7 @@ function validateReportPack(pack, selected) {
   }
 }
 
-function validateSingleReport(report, byId) {
+export function validateSingleReport(report, byId) {
   if (!byId.has(report?.id)) throw new Error(`Unknown report id ${report?.id}`)
   for (const key of ['title', 'category', 'level', 'oneLine', 'whyLearn', 'background', 'architecture']) {
     if (!cleanText(report[key])) throw new Error(`Report ${report.id} lacks ${key}`)
@@ -844,7 +886,7 @@ function validateSingleReport(report, byId) {
   report.codeReading = (report.codeReading || []).filter((entry) => allowedPaths.has(entry.path))
 }
 
-function buildTags(report, source) {
+export function buildTags(report, source) {
   const tags = new Set([
     source.sourceKind === 'github' ? '来源/开源仓库' : source.sourceKind === 'article' ? '来源/技术文章' : '来源/社区讨论',
     `难度/${report.level}`,
@@ -854,7 +896,7 @@ function buildTags(report, source) {
   return [...tags]
 }
 
-function renderLearningNote(report, source) {
+export function renderLearningNote(report, source) {
   const tags = buildTags(report, source)
   const lines = [
     '---',
@@ -909,7 +951,7 @@ function renderLearningNote(report, source) {
   return lines.join('\n')
 }
 
-function renderIndex(pending, created) {
+export function renderIndex(pending, created) {
   const lines = [
     '---',
     `日期: "${TODAY}"`,
@@ -964,6 +1006,56 @@ function inferArea(defaultArea, item) {
   if (/\b(java|jvm|spring|quarkus|micronaut|kafka|flink|gradle|maven)\b/.test(text) || item?.language === 'Java') return '后端与虚拟机'
   if (/\b(ai|agent|llm|mcp|rag|model|inference|embedding|multimodal|transformer)\b/.test(text)) return '人工智能'
   return defaultArea
+}
+
+export function normalizeContentUrl(value) {
+  try {
+    const url = new URL(String(value))
+    if (!['http:', 'https:'].includes(url.protocol)) return ''
+    url.protocol = url.protocol.toLowerCase()
+    url.hostname = url.hostname.toLowerCase()
+    url.hash = ''
+    const retained = [...url.searchParams.entries()]
+      .filter(([key]) => !isTrackingParameter(key))
+      .sort(([leftKey, leftValue], [rightKey, rightValue]) => leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue))
+    url.search = ''
+    for (const [key, entryValue] of retained) url.searchParams.append(key, entryValue)
+    url.pathname = url.pathname.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/'
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return ''
+  }
+}
+
+export function contentKeyForCandidate(candidate) {
+  const repository = normalizeRepositoryName(candidate?.repository) || repositoryFromGitHubUrl(candidate?.url)
+  if (candidate?.sourceKind === 'github' && repository) return `github:${repository}`
+  const normalizedUrl = normalizeContentUrl(candidate?.originalUrl || candidate?.url)
+  if (normalizedUrl) return `url:${normalizedUrl}`
+  return candidate?.id ? `id:${cleanText(candidate.id).toLowerCase()}` : ''
+}
+
+function normalizeRepositoryName(value) {
+  const match = cleanText(value).replace(/\.git$/i, '').match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/)
+  return match ? `${match[1].toLowerCase()}/${match[2].toLowerCase()}` : ''
+}
+
+function repositoryFromGitHubUrl(value) {
+  try {
+    const url = new URL(String(value))
+    if (!['github.com', 'www.github.com'].includes(url.hostname.toLowerCase())) return ''
+    const [owner, repository] = url.pathname.split('/').filter(Boolean)
+    return normalizeRepositoryName(`${owner || ''}/${repository || ''}`)
+  } catch {
+    return ''
+  }
+}
+
+function isTrackingParameter(value) {
+  const key = String(value).toLowerCase()
+  return key.startsWith('utm_')
+    || key.startsWith('mc_')
+    || ['fbclid', 'gclid', 'dclid', 'msclkid', 'ref', 'source', 'spm', '_hsenc', '_hsmi'].includes(key)
 }
 
 function keywordScore(value) {

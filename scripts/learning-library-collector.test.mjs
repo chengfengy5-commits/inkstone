@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseArchiveTree, parseGitTree, parseRssItems, rssCandidate, selectKeyPaths } from './learning-library-collector.mjs'
+import {
+  contentKeyForCandidate,
+  normalizeContentUrl,
+  parseArchiveTree,
+  parseGitTree,
+  parseRssItems,
+  prepareCandidatePool,
+  renderIndex,
+  renderLearningNote,
+  rssCandidate,
+  selectKeyPaths,
+  validateSingleReport,
+  validateSelection,
+} from './learning-library-collector.mjs'
 
 test('parses RSS CDATA, source links, discussion links, and categories', () => {
   const [item] = parseRssItems(`<?xml version="1.0"?>
@@ -77,3 +90,204 @@ test('normalizes GitHub source archive paths without extracting the archive', ()
   assert.equal(result.prefix, 'quiche-main/')
   assert.deepEqual(result.tree.map((entry) => entry.path), ['README.md', 'Cargo.toml', 'quiche/src/lib.rs'])
 })
+
+test('normalizes content URLs without erasing meaningful query parameters', () => {
+  assert.equal(
+    normalizeContentUrl('HTTPS://Example.COM:443/posts/agent/?utm_source=rss&lang=zh#comments'),
+    'https://example.com/posts/agent?lang=zh',
+  )
+  assert.equal(
+    normalizeContentUrl('https://example.com/search?q=java&utm_medium=email&ref=sidebar'),
+    'https://example.com/search?q=java',
+  )
+})
+
+test('uses one content key for a GitHub repository across trending, search, and release entries', () => {
+  const trending = {
+    id: 'repo:openai/codex',
+    sourceKind: 'github',
+    repository: 'OpenAI/Codex',
+    url: 'https://github.com/OpenAI/Codex',
+  }
+  const release = {
+    id: 'release:openai/codex:v1.2.3',
+    sourceKind: 'github',
+    repository: 'openai/codex',
+    url: 'https://github.com/openai/codex/releases/tag/v1.2.3',
+  }
+
+  assert.equal(contentKeyForCandidate(trending), 'github:openai/codex')
+  assert.equal(contentKeyForCandidate(release), 'github:openai/codex')
+})
+
+test('deduplicates cross-source candidates by content and preserves the highest-scoring evidence', () => {
+  const collected = [
+    candidate({ id: 'repo:openai/codex', repository: 'OpenAI/Codex', score: 500, source: 'GitHub Trending' }),
+    candidate({ id: 'release:openai/codex:v1', repository: 'openai/codex', url: 'https://github.com/openai/codex/releases/tag/v1', score: 900, source: 'GitHub Releases' }),
+    candidate({ id: 'rss:article:a', sourceKind: 'article', url: 'https://example.com/deep-dive/?utm_source=rss', score: 300 }),
+    candidate({ id: 'rss:article:b', sourceKind: 'article', url: 'https://EXAMPLE.com:443/deep-dive#intro', score: 700 }),
+  ]
+
+  const { candidates, stats } = prepareCandidatePool(collected, {})
+
+  assert.deepEqual(candidates.map((item) => item.id), ['release:openai/codex:v1', 'rss:article:b'])
+  assert.equal(candidates[0].contentKey, 'github:openai/codex')
+  assert.equal(candidates[1].contentKey, 'url:https://example.com/deep-dive')
+  assert.deepEqual(stats, {
+    collected: 4,
+    eligible: 4,
+    deduplicated: 2,
+    filteredSeen: 0,
+    filteredSuspicious: 0,
+    bySource: { github: 1, article: 1, community: 0 },
+  })
+})
+
+test('filters both new content keys and legacy source ids from the seen window', () => {
+  const repository = candidate({ id: 'release:openai/codex:v2', repository: 'openai/codex', score: 900 })
+  const legacyArticle = candidate({ id: 'rss:article:legacy', sourceKind: 'article', url: 'https://example.com/legacy', score: 400 })
+  const seen = {
+    'github:openai/codex': '2026-09-21',
+    'rss:article:legacy': '2026-09-20',
+  }
+
+  const { candidates, stats } = prepareCandidatePool([repository, legacyArticle], seen)
+
+  assert.deepEqual(candidates, [])
+  assert.equal(stats.filteredSeen, 2)
+})
+
+test('maps legacy GitHub repo and release ids across source types', () => {
+  const release = candidate({
+    id: 'release:openai/codex:v2',
+    repository: 'openai/codex',
+    url: 'https://github.com/openai/codex/releases/tag/v2',
+  })
+  const repository = candidate({ id: 'repo:apache/kafka', repository: 'apache/kafka' })
+  const seen = {
+    'repo:openai/codex': '2026-09-20',
+    'release:apache/kafka:4.1.0': '2026-09-21',
+  }
+
+  const { candidates, stats } = prepareCandidatePool([release, repository], seen)
+
+  assert.deepEqual(candidates, [])
+  assert.equal(stats.filteredSeen, 2)
+})
+
+test('rejects an eight-item selection that repeats the same content through different ids', () => {
+  const candidates = [
+    candidate({ id: 'repo:openai/codex', repository: 'openai/codex', area: '人工智能' }),
+    candidate({ id: 'release:openai/codex:v1', repository: 'OpenAI/Codex', url: 'https://github.com/openai/codex/releases/tag/v1', area: '人工智能' }),
+    candidate({ id: 'repo:apache/kafka', repository: 'apache/kafka', area: '后端与虚拟机' }),
+    candidate({ id: 'repo:spring-projects/spring-boot', repository: 'spring-projects/spring-boot', area: '后端与虚拟机' }),
+    candidate({ id: 'article:one', sourceKind: 'article', url: 'https://example.com/article-one', area: '人工智能' }),
+    candidate({ id: 'article:two', sourceKind: 'article', url: 'https://example.com/article-two', area: '开源与工程' }),
+    candidate({ id: 'community:one', sourceKind: 'community', url: 'https://news.example.com/one', area: '开源与工程' }),
+    candidate({ id: 'community:two', sourceKind: 'community', url: 'https://news.example.com/two', area: '开源与工程' }),
+  ]
+  const selection = { items: candidates.map(({ id }) => ({ id, learningAngle: '验证工程设计' })) }
+
+  assert.throws(() => validateSelection(selection, candidates), /duplicated content github:openai\/codex/)
+})
+
+test('renders a standalone Chinese learning note with source metadata and evidence-backed code paths', () => {
+  const source = candidate({
+    id: 'repo:openai/codex',
+    repository: 'openai/codex',
+    title: 'openai/codex',
+    url: 'https://github.com/openai/codex',
+    source: 'GitHub Trending',
+    metrics: '星标 1,000',
+    evidence: { repository: 'openai/codex', files: [{ path: 'src/main.ts', content: 'main' }] },
+  })
+  const markdown = renderLearningNote(reportFixture(), source)
+
+  assert.match(markdown, /^---\n日期: "\d{4}-\d{2}-\d{2}"/)
+  assert.match(markdown, /来源类型: "开源项目"/)
+  assert.match(markdown, /原始链接: "https:\/\/github\.com\/openai\/codex"/)
+  assert.match(markdown, /标签: \["来源\/开源仓库", "难度\/进阶", "学习状态\/待实践", "方向\/架构设计"\]/)
+  for (const heading of ['为什么值得学习', '哪些方面做得好', '核心知识点', '关键代码导读', '可迁移到实际项目的经验', '动手练习', '风险、限制与待验证点']) {
+    assert.match(markdown, new RegExp(`## ${heading}`))
+  }
+  assert.match(markdown, /`src\/main\.ts`/)
+})
+
+test('removes model-invented code paths before rendering a repository report', () => {
+  const report = reportFixture()
+  report.codeReading.push({ path: 'src/invented.ts', insight: '这条路径不存在。' })
+  const selected = new Map([[
+    report.id,
+    candidate({ evidence: { files: [{ path: 'src/main.ts', content: 'main' }] } }),
+  ]])
+
+  validateSingleReport(report, selected)
+
+  assert.deepEqual(report.codeReading, [{ path: 'src/main.ts', insight: '观察依赖如何装配。' }])
+})
+
+test('renders a compact daily index that links every standalone note', () => {
+  const items = [
+    createdItem('github', '仓库报告', 'https://inkstone.example/notes/repo'),
+    createdItem('article', '文章报告', 'https://inkstone.example/notes/article'),
+    createdItem('community', '讨论报告', 'https://inkstone.example/notes/community'),
+  ]
+  const markdown = renderIndex({
+    headline: '今日重点',
+    overview: '三类材料分别形成独立学习笔记。',
+    closing: '先读文章，再看代码。',
+    warnings: ['RSS Feeds: one source timed out'],
+  }, items)
+
+  for (const item of items) assert.match(markdown, new RegExp(item.note.url.replaceAll('/', '\\/')))
+  assert.match(markdown, /本页只做导航/)
+  assert.match(markdown, /## 采集提示/)
+  assert.doesNotMatch(markdown, /## 背景与问题/)
+})
+
+function candidate(overrides = {}) {
+  const sourceKind = overrides.sourceKind || 'github'
+  return {
+    id: 'repo:example/project',
+    sourceKind,
+    area: '开源与工程',
+    repository: sourceKind === 'github' ? 'example/project' : undefined,
+    title: 'example/project',
+    url: sourceKind === 'github' ? 'https://github.com/example/project' : 'https://example.com/post',
+    source: 'fixture',
+    score: 100,
+    ...overrides,
+  }
+}
+
+function reportFixture() {
+  return {
+    id: 'repo:openai/codex',
+    title: 'Codex 的运行时分层',
+    category: '开源与工程',
+    level: '进阶',
+    tags: ['架构设计'],
+    oneLine: '通过真实代码理解运行时边界。',
+    whyLearn: '它展示了可迁移到工程项目的清晰分层。',
+    whatGood: ['边界清晰', '证据充分', '便于测试'],
+    background: '复杂工具需要隔离协议与执行层。',
+    corePoints: [{ name: '边界', explanation: '接口隔离变化。' }],
+    architecture: '入口只负责组装，核心逻辑保持独立。',
+    codeReading: [{ path: 'src/main.ts', insight: '观察依赖如何装配。' }],
+    transferable: ['为外部系统保留适配层'],
+    practice: ['替换一个适配器并运行测试'],
+    limitations: ['示例未覆盖分布式部署'],
+    questions: ['如何在多节点下保持幂等？'],
+  }
+}
+
+function createdItem(sourceKind, title, url) {
+  return {
+    sourceKind,
+    title,
+    whyLearn: '能够迁移到实际工程。',
+    whatGood: ['结构清晰', '验证充分'],
+    tags: ['方向/架构设计'],
+    note: { url },
+  }
+}
