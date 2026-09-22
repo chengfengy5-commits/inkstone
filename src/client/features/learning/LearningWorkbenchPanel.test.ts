@@ -4,18 +4,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NoteSummary } from '@shared/types'
 import { initI18n, t } from '../../lib/i18n'
 import { useNotes } from '../../store/notes'
+import { useUi } from '../../store/ui'
 import { LearningWorkbenchPanel } from './LearningWorkbenchPanel'
 import { LEARNING_STATUS_PREFIX, LEARNING_STATUS_TAGS } from './learning-workbench'
 
 let root: Root
 let container: HTMLDivElement
 let notesState: ReturnType<typeof useNotes.getState>
+let toast: ReturnType<typeof useUi.getState>['toast']
 
 beforeEach(async () => {
   localStorage.clear()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   await initI18n()
   notesState = useNotes.getState()
+  toast = useUi.getState().toast
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -24,6 +27,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(() => root.unmount())
   useNotes.setState(notesState, true)
+  useUi.setState({ toast })
   container.remove()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -62,6 +66,58 @@ describe('learning workbench panel', () => {
 
     expect(document.body.textContent).toContain(t('learning.empty_title'))
     expect(document.body.textContent).toContain(t('learning.empty_description'))
+  })
+
+  it('loads an unopened note without navigation and stages its status change', async () => {
+    const editContent = vi.fn()
+    const source = `Body #${status('practice')} #topic/Java`
+    const openNote = vi.fn(async (id: string) => {
+      useNotes.setState((state) => ({ contents: { ...state.contents, [id]: source } }))
+    })
+    useNotes.setState({
+      notes: { practice: note('practice', 'Practice one', [status('practice')]) },
+      contents: {},
+      openNote,
+      editContent,
+    })
+
+    await act(() => root.render(createElement(LearningWorkbenchPanel, { onClose: vi.fn() })))
+    const select = [...document.querySelectorAll<HTMLSelectElement>('select')]
+      .find((item) => item.getAttribute('aria-label') === t('learning.change_status', { title: 'Practice one' }))!
+
+    await act(async () => {
+      select.value = 'learning'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(openNote).toHaveBeenCalledWith('practice', { navigate: false })
+    expect(editContent).toHaveBeenCalledWith('practice', `Body #${status('learning')} #topic/Java`)
+  })
+
+  it('reports a failed background load without staging a partial edit', async () => {
+    const editContent = vi.fn()
+    const toast = vi.fn()
+    useUi.setState({ toast })
+    useNotes.setState({
+      notes: { practice: note('practice', 'Practice one', [status('practice')]) },
+      contents: {},
+      openNote: vi.fn(async () => {}),
+      editContent,
+    })
+
+    await act(() => root.render(createElement(LearningWorkbenchPanel, { onClose: vi.fn() })))
+    const select = [...document.querySelectorAll<HTMLSelectElement>('select')]
+      .find((item) => item.getAttribute('aria-label') === t('learning.change_status', { title: 'Practice one' }))!
+
+    await act(async () => {
+      select.value = 'review'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(editContent).not.toHaveBeenCalled()
+    expect(toast).toHaveBeenCalledWith({ title: t('learning.status_update_failed'), tone: 'danger' })
   })
 })
 

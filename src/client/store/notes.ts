@@ -32,6 +32,7 @@ interface NotesState {
     openNote: (id: string, options?: {
         pane?: WorkspacePane;
         activate?: boolean;
+        navigate?: boolean;
     }) => Promise<void>;
     editTitle: (id: string, title: string) => void;
     editContent: (id: string, content: string) => void;
@@ -391,19 +392,22 @@ export const useNotes = create<NotesState>((set, get) => ({
     },
     async openNote(id, options) {
         const uiAtRequest = useUi.getState();
+        const navigate = options?.navigate !== false;
         const targetPane = options?.pane ?? (uiAtRequest.workspaceSecondaryNoteId
             ? uiAtRequest.activeWorkspacePane
             : 'primary');
         const activate = options?.activate !== false;
-        latestRequestedNoteIds[targetPane] = id;
-        const requestSequence = ++openSequences[targetPane];
+        if (navigate)
+            latestRequestedNoteIds[targetPane] = id;
+        const requestSequence = navigate ? ++openSequences[targetPane] : openSequences[targetPane];
         const requestEpoch = noteRequestEpochs.get(id) ?? 0;
         const state = get();
         const summary = state.notes[id];
         if (!summary)
             return;
         if (hasOwnContent(state.contents, id)) {
-            useUi.getState().setWorkspaceNote(targetPane, id, activate);
+            if (navigate)
+                useUi.getState().setWorkspaceNote(targetPane, id, activate);
             revalidateNote(id, summary.rev, set, get);
             return;
         }
@@ -418,25 +422,27 @@ export const useNotes = create<NotesState>((set, get) => ({
         const paneNoteId = (ui: ReturnType<typeof useUi.getState>) => targetPane === 'secondary'
             ? ui.workspaceSecondaryNoteId
             : ui.workspaceSecondaryNoteId ? ui.workspacePrimaryNoteId : ui.activeNoteId;
-        const stopWatchingNavigation = useUi.subscribe((ui, previous) => {
+        const stopWatchingNavigation = navigate ? useUi.subscribe((ui, previous) => {
             if (!selected && (paneNoteId(ui) !== paneNoteId(previous) ||
                 ui.mobilePane !== previous.mobilePane || ui.view !== previous.view ||
                 ui.folderId !== previous.folderId || ui.tag !== previous.tag ||
                 (activate && ui.activeWorkspacePane !== previous.activeWorkspacePane)))
                 navigationChanged = true;
-        });
+        }) : () => {};
         const selectTarget = () => {
+            if (!navigate)
+                return;
             if (selected || navigationChanged || requestSequence !== openSequences[targetPane] ||
                 (noteRequestEpochs.get(id) ?? 0) !== requestEpoch || !get().notes[id])
                 return;
             selected = true;
             useUi.getState().setWorkspaceNote(targetPane, id, activate);
         };
-        const feedbackTimer = window.setTimeout(selectTarget, NOTE_SWITCH_FEEDBACK_DELAY_MS);
+        const feedbackTimer = navigate ? window.setTimeout(selectTarget, NOTE_SWITCH_FEEDBACK_DELAY_MS) : undefined;
         try {
             const cached = await localDb.getContent(id);
             let currentSummary = get().notes[id];
-            if (requestSequence !== openSequences[targetPane] ||
+            if ((navigate && requestSequence !== openSequences[targetPane]) ||
                 (noteRequestEpochs.get(id) ?? 0) !== requestEpoch ||
                 !currentSummary)
                 return;
@@ -448,7 +454,7 @@ export const useNotes = create<NotesState>((set, get) => ({
                 if (cached.writeId) {
                     const outbox = await localDb.getOutbox();
                     currentSummary = get().notes[id];
-                    if (requestSequence !== openSequences[targetPane] ||
+                    if ((navigate && requestSequence !== openSequences[targetPane]) ||
                         (noteRequestEpochs.get(id) ?? 0) !== requestEpoch ||
                         !currentSummary)
                         return;
@@ -568,7 +574,7 @@ export const useNotes = create<NotesState>((set, get) => ({
             validatedRevisions.set(id, note.rev);
         }
         catch (err) {
-            if (err === STALE_NOTE_REQUEST || requestSequence !== openSequences[targetPane] ||
+            if (err === STALE_NOTE_REQUEST || (navigate && requestSequence !== openSequences[targetPane]) ||
                 (noteRequestEpochs.get(id) ?? 0) !== requestEpoch || !get().notes[id])
                 return;
             const message = err instanceof ApiError && err.isOffline
@@ -594,7 +600,8 @@ export const useNotes = create<NotesState>((set, get) => ({
             toastError(err, t("notes.failed_to_open_note"));
         }
         finally {
-            window.clearTimeout(feedbackTimer);
+            if (feedbackTimer !== undefined)
+                window.clearTimeout(feedbackTimer);
             stopWatchingNavigation();
             selectTarget();
         }
