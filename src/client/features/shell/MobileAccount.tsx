@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, ChevronRight, LogOut, Waypoints } from 'lucide-react';
+import { ArrowLeft, ChevronRight, GraduationCap, LogOut, Waypoints } from 'lucide-react';
 import { ACCENTS } from '@shared/constants';
 import { Avatar } from '../../components/primitives';
 import { t } from '../../lib/i18n';
@@ -28,6 +28,7 @@ export function MobileAccount() {
             <div className="min-w-0"><p className="truncate text-lg font-semibold">{user.name || user.username}</p><p className="truncate text-sm text-[var(--text-tertiary)]">@{user.username}</p></div>
         </div>}
         <div className="shrink-0 divide-y divide-[var(--border-subtle)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)]">
+            <button type="button" onClick={() => useUi.getState().openPanel('learning')} className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm active:bg-[var(--bg-active)]"><GraduationCap size={16} aria-hidden="true"/><span className="flex-1">{t('learning.title')}</span><ChevronRight size={16} aria-hidden="true" className="text-[var(--text-tertiary)]"/></button>
             {SECTIONS.map((item) => <button key={item.id} type="button" onClick={() => { warmSettingsSection(item.id); setSection(item.id); }} className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm active:bg-[var(--bg-active)]"><span aria-hidden="true" className="text-[var(--accent)]">{item.icon}</span><span className="flex-1">{item.label()}</span><ChevronRight size={16} aria-hidden="true" className="text-[var(--text-tertiary)]"/></button>)}
             <button type="button" onClick={() => useUi.getState().openPanel('graph')} className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm active:bg-[var(--bg-active)]"><Waypoints size={16} aria-hidden="true"/><span className="flex-1">{t('common.graph')}</span><ChevronRight size={16} aria-hidden="true"/></button>
         </div>

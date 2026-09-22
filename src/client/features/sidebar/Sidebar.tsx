@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArrowDown, ArrowUp, ChevronRight, Clock, CornerUpLeft, FilePlus2, FileText, FolderClosed, FolderInput, FolderOpen, FolderPlus, Hash, Inbox, LogOut, Moon, MoreHorizontal, Palette, PanelLeft, PanelLeftClose, Pencil, Plus, Settings, Star, Sun, Trash2, Waypoints, } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ChevronRight, Clock, CornerUpLeft, FilePlus2, FileText, FolderClosed, FolderInput, FolderOpen, FolderPlus, GraduationCap, Hash, Inbox, LogOut, Moon, MoreHorizontal, Palette, PanelLeft, PanelLeftClose, Pencil, Plus, Settings, Star, Sun, Trash2, Waypoints, } from 'lucide-react';
 import { LIMITS } from '@shared/constants';
 import type { Tag, ViewKind } from '@shared/types';
 import { compareTagNames } from '@shared/markdown-utils';
@@ -21,7 +21,9 @@ export function Sidebar({ collapsed = false, onCollapse, }: {
     onCollapse?: () => void;
 }) {
     const view = useUi((s) => s.view);
+    const panel = useUi((s) => s.panel);
     const openView = useUi((s) => s.openView);
+    const openPanel = useUi((s) => s.openPanel);
     const counts = useNavigationCounts();
     return (<>
         {collapsed ? <SidebarRail onExpand={onCollapse}/> : (<aside className="flex h-full min-h-0 flex-col bg-[var(--bg-sunken)]">
@@ -46,6 +48,7 @@ export function Sidebar({ collapsed = false, onCollapse, }: {
           <ViewItem icon={<FileText size={14}/>} label={t("navigation.all_notes")} view="all" count={counts.all} active={view === 'all'} onSelect={openView}/>
           <ViewItem icon={<Clock size={14}/>} label={t("navigation.recently_edited")} view="recent" active={view === 'recent'} onSelect={openView}/>
           <ViewItem icon={<Star size={14}/>} label={t("navigation.favorites")} view="starred" count={counts.starred} active={view === 'starred'} onSelect={openView}/>
+          <ActionItem icon={<GraduationCap size={14}/>} label={t('learning.title')} active={panel === 'learning'} onSelect={() => openPanel('learning')}/>
           <ViewItem icon={<Inbox size={14}/>} label={t("navigation.unfiled")} view="unfiled" count={counts.unfiled} active={view === 'unfiled'} onSelect={openView}/>
         </div>
 
@@ -68,7 +71,9 @@ function SidebarRail({ onExpand }: {
     onExpand?: () => void;
 }) {
     const view = useUi((s) => s.view);
+    const panel = useUi((s) => s.panel);
     const openView = useUi((s) => s.openView);
+    const openPanel = useUi((s) => s.openPanel);
     return (<aside className="flex h-full min-h-0 flex-col items-center bg-[var(--bg-sunken)]">
       <div className="flex h-11 w-full shrink-0 items-center justify-center border-b border-[var(--border-subtle)]">
         <Tooltip label={t("sidebar.expand_navigation")} side="right">
@@ -82,6 +87,7 @@ function SidebarRail({ onExpand }: {
         <SearchButton variant="icon" />
         <RailButton label={t("navigation.all_notes")} active={view === 'all'} icon={<FileText size={16}/>} onClick={() => openView('all')}/>
         <RailButton label={t("navigation.favorites")} active={view === 'starred'} icon={<Star size={16}/>} onClick={() => openView('starred')}/>
+        <RailButton label={t('learning.title')} active={panel === 'learning'} icon={<GraduationCap size={16}/>} onClick={() => openPanel('learning')}/>
         <RailButton label={t("navigation.trash")} active={view === 'trash'} icon={<Trash2 size={16}/>} onClick={() => openView('trash')}/>
         <div className="my-1 h-px w-6 bg-[var(--border-subtle)]"/>
         <RailButton label={t("common.new_note")} combo="mod+n" accent icon={<FilePlus2 size={16}/>} onClick={() => void createContextualNote()}/>
@@ -107,6 +113,19 @@ function RailButton({ label, combo, icon, active, accent, onClick, }: {
         {icon}
       </IconButton>
     </Tooltip>);
+}
+function ActionItem({ icon, label, active, onSelect }: {
+    icon: React.ReactNode;
+    label: string;
+    active: boolean;
+    onSelect: () => void;
+}) {
+    return (<button type="button" aria-current={active ? 'page' : undefined} onClick={onSelect} className={cn('group relative flex h-10 w-full items-center gap-2.5 rounded-[var(--r-md)] px-2 text-left md:h-[30px]', 'transition-colors duration-[var(--dur-fast)]', active
+            ? 'bg-[var(--accent-soft)] text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]')}>
+      <span className={cn('shrink-0', active ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]')}>{icon}</span>
+      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{label}</span>
+    </button>);
 }
 function SidebarAccount({ rail = false }: {
     rail?: boolean;
