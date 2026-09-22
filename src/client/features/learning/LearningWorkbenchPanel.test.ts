@@ -6,6 +6,7 @@ import { initI18n, t } from '../../lib/i18n'
 import { useNotes } from '../../store/notes'
 import { useUi } from '../../store/ui'
 import { LearningWorkbenchPanel } from './LearningWorkbenchPanel'
+import { formatLocalDate, parseLearningReviewMetadata } from './learning-review'
 import { LEARNING_STATUS_PREFIX, LEARNING_STATUS_TAGS } from './learning-workbench'
 
 let root: Root
@@ -92,7 +93,10 @@ describe('learning workbench panel', () => {
     })
 
     expect(openNote).toHaveBeenCalledWith('practice', { navigate: false })
-    expect(editContent).toHaveBeenCalledWith('practice', `Body #${status('learning')} #topic/Java`)
+    expect(editContent).toHaveBeenCalledOnce()
+    const written = editContent.mock.calls[0]![1] as string
+    expect(written).toContain(`Body #${status('learning')} #topic/Java`)
+    expect(parseLearningReviewMetadata(written).lastStudied).toBe(formatLocalDate())
   })
 
   it('reports a failed background load without staging a partial edit', async () => {
@@ -118,6 +122,39 @@ describe('learning workbench panel', () => {
 
     expect(editContent).not.toHaveBeenCalled()
     expect(toast).toHaveBeenCalledWith({ title: t('learning.status_update_failed'), tone: 'danger' })
+  })
+
+  it('shows the due queue and schedules a review through the existing write path', async () => {
+    const today = formatLocalDate()
+    const source = `---\n${String.fromCodePoint(0x590d, 0x4e60, 0x65e5, 0x671f)}: "${today}"\n---\nBody #${status('review')}`
+    const editContent = vi.fn()
+    useNotes.setState({
+      notes: { review: note('review', 'Review one', [status('review')]) },
+      contents: { review: source },
+      openNote: vi.fn(async () => {}),
+      editContent,
+    })
+
+    await act(() => root.render(createElement(LearningWorkbenchPanel, { onClose: vi.fn() })))
+    expect(document.body.textContent).toContain(t('learning.review_queue'))
+    expect(document.body.textContent).toContain(t('learning.review_today'))
+    const input = document.querySelector<HTMLInputElement>(`input[aria-label="${t('learning.schedule_review', { title: 'Review one' })}"]`)!
+    expect(input.value).toBe(today)
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '2026-09-30')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(editContent).toHaveBeenCalledOnce()
+    const written = editContent.mock.calls[0]![1] as string
+    expect(parseLearningReviewMetadata(written)).toEqual({
+      reviewDate: '2026-09-30',
+      lastStudied: today,
+      invalidReviewDate: false,
+    })
   })
 })
 
