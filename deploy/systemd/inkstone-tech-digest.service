@@ -1,5 +1,5 @@
 [Unit]
-Description=Create a curated Chinese technology learning digest in Inkstone
+Description=Create an organized Chinese technology learning library in Inkstone
 Wants=network-online.target
 After=network-online.target docker.service
 
@@ -15,7 +15,7 @@ Environment=TECH_DIGEST_TIME_ZONE=Asia/Shanghai
 LoadCredential=mcp-token:/etc/inkstone/github-trending-mcp.token
 LoadCredential=llm-token:/etc/inkstone/tech-digest-llm.token
 StateDirectory=inkstone-tech-digest
-ExecStart=/usr/bin/node /opt/inkstone/source/scripts/tech-learning-digest-collector.mjs
+ExecStart=/usr/bin/node /opt/inkstone/source/scripts/learning-library-collector.mjs
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
